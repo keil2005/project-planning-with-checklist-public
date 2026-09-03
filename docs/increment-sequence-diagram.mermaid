@@ -1,0 +1,44 @@
+sequenceDiagram
+    autonumber
+    actor U as 用户(浏览器)
+    participant App as App.tsx
+    participant ST as PlanStore(zustand)
+    participant API as src/api.ts
+    participant RT as server/routes.ts
+    participant ROS as shared/roster.ts
+    participant TT as TaskTable/OwnerAutocomplete
+    participant SC as shared/scheduler
+    participant EX as Exporters
+
+    %% ---------- A. 启动：名单改为写死常量 ----------
+    U->>App: 打开页面
+    App->>ST: init()
+    ST->>API: getUsers()
+    API->>RT: GET /api/users
+    RT->>ROS: [...BUILTIN_USERS]
+    ROS-->>RT: 21 人严格保序
+    RT-->>API: {code:0, data:[...]}
+    API-->>ST: users(=BUILTIN_USERS)
+    ST->>Dialogs: UserGateDialog 展示 21 人(原序, 无 warning)
+
+    %% ---------- B. 编辑负责人（复用 owner，不走排程） ----------
+    U->>TT: 在「负责人」单元格输入
+    TT->>TT: Autocomplete+freeSolo 候选过滤(原序/子串/高亮)
+    U->>TT: 选中名单内 或 手填自由文本 确认
+    TT->>ST: updateCell(id, 'owner', value.trim())
+    ST->>SC: schedule(plan)   ★ owner 不参与任何分支
+    SC-->>ST: computed(与改动前一致) + 无诊断
+    ST-->>TT: 重绘(负责人列显示) + dirty=true(保存按钮激活)
+    Note over ST: 保存仍需持锁 + notes 必填(既有约束, P0-8)
+
+    %% ---------- C. 导出：CSV + MSPDI 含负责人 ----------
+    U->>App: 导出 MS Project XML / CSV
+    App->>API: exportUrl(planId, format)
+    API->>RT: GET /api/plans/:id/export?format=...
+    RT->>SC: schedule() 取权威 computed
+    RT->>EX: toCsv(plan, computed)
+    EX-->>RT: CSV 含「负责人」列(Group A 正确转义)
+    RT->>EX: toMsProjectXml(plan, computed)
+    EX->>EX: 收集 usedOwners -> Resources + Assignments
+    EX-->>RT: XML(资源名=负责人, MS Project 可见)
+    RT-->>U: 文件流(Content-Disposition: attachment)

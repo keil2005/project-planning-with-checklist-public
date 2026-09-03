@@ -1,0 +1,75 @@
+classDiagram
+    direction LR
+
+    %% ==================== 新增：名单单源 ====================
+    class Roster {
+        <<module shared/roster.ts>>
+        +BUILTIN_USERS: readonly string[20]
+    }
+
+    %% ==================== Task 复用 owner（不新增字段） ====================
+    class Task {
+        +string id
+        +int seq
+        +string name
+        +string parentId
+        +TaskInput input
+        +List~Dependency~ deps
+        +TaskComputed computed
+        +bool collapsed
+        +string note
+        +string owner
+        +number progress
+    }
+
+    %% ==================== TaskField 联合类型扩展 ====================
+    class TaskField {
+        <<union>>
+        +'start' | 'end' | 'duration' | 'deps' | 'name' | 'owner'
+    }
+
+    %% ==================== 前端：负责人联想单元格（新增） ====================
+    class OwnerAutocomplete {
+        <<component src/components/TaskTable.tsx>>
+        +value: string
+        +disabled: boolean
+        +candidates: string[]
+        +onCommit(v: string): void
+    }
+
+    %% ==================== store 动作（扩展） ====================
+    class PlanStore {
+        <<zustand>>
+        +updateCell(taskId, field: TaskField, value)
+        +addRow(afterTaskId)
+        +useOwnerCandidates(): string[]
+    }
+
+    %% ==================== 后端：/users 改为返回常量 ====================
+    class ApiRouter {
+        <<express>>
+        +getUsers() GET /api/users  -- 返回 BUILTIN_USERS
+    }
+
+    %% ==================== 导出层扩展 ====================
+    class Exporters {
+        <<module>>
+        +toMsProjectXml(plan, computed)  -- 新增 Resources+Assignments
+        +toCsv(plan, computed)          -- 新增「负责人」列
+    }
+
+    %% ==================== 选人对话框（改造） ====================
+    class UserGateDialog {
+        <<component src/components/Dialogs.tsx>>
+        -文案: 名单为系统内置
+        -移除 warning 分支
+        -顶部过滤框(无自由输入)
+    }
+
+    Roster ..> ApiRouter : GET /users 返回 BUILTIN_USERS
+    Roster ..> OwnerAutocomplete : 固定候选原序
+    Roster ..> UserGateDialog : 候选来源(store.users)
+    PlanStore ..> Roster : useOwnerCandidates 合并计划内自由文本
+    TaskField ..> PlanStore : updateCell 接受 'owner'
+    OwnerAutocomplete ..> PlanStore : onCommit -> updateCell(id,'owner',v)
+    Task "1" *-- "0..1" owner : 复用扩展位(不新增字段)
