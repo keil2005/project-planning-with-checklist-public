@@ -47780,6 +47780,9 @@ function planFile(planId) {
 function historyFile(planId) {
   return import_node_path.default.join(planDir(planId), "history.json");
 }
+function todosFile(planId) {
+  return import_node_path.default.join(planDir(planId), "todos.json");
+}
 function calendarFile() {
   return import_node_path.default.join(config.dataDir, "calendar.json");
 }
@@ -48194,6 +48197,109 @@ function formatPeople(names, sep = PEOPLE_SEP) {
   return names.join(sep);
 }
 
+// shared/todo.ts
+var todoSeq = 0;
+function makeTodoId() {
+  todoSeq += 1;
+  return `td-${Date.now().toString(36)}-${todoSeq}`;
+}
+function sanitizeTodos(raw, taskId) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  const seen = /* @__PURE__ */ new Set();
+  raw.forEach((r) => {
+    const item = r ?? {};
+    if (typeof item !== "object" || item === null) return;
+    const text = typeof item.text === "string" ? item.text.trim() : "";
+    if (text === "") return;
+    let id = typeof item.id === "string" && item.id !== "" ? item.id : "";
+    if (id === "" || seen.has(id)) id = `${taskId}-td-${out.length}`;
+    seen.add(id);
+    const assignee = typeof item.assignee === "string" ? item.assignee.trim() : "";
+    out.push({
+      id,
+      text,
+      done: item.done === true,
+      order: out.length,
+      ...assignee !== "" ? { assignee } : {}
+    });
+  });
+  return out;
+}
+function enforceTodoOwnerConsistency(tasks) {
+  for (const t of tasks) {
+    const owners = normalizePeople(t.owner);
+    const consultants = normalizePeople(t.consultant);
+    const present = new Set([...owners, ...consultants].map((p) => p.trim().toLowerCase()));
+    let changed = false;
+    for (const todo of t.todos ?? []) {
+      const a = todo.assignee;
+      if (!a) continue;
+      const key = a.trim().toLowerCase();
+      if (present.has(key)) continue;
+      owners.push(a);
+      present.add(key);
+      changed = true;
+    }
+    if (changed) t.owner = owners;
+  }
+}
+function todosProgress(todos) {
+  const list = todos ?? [];
+  let done = 0;
+  for (const t of list) if (t.done) done += 1;
+  return { done, total: list.length };
+}
+function todosProgressText(todos) {
+  const { done, total } = todosProgress(todos);
+  if (total === 0) return "";
+  return `${done}/${total}`;
+}
+function applyTodoOp(todos, op, makeId) {
+  const list = [...todos];
+  const idx = op.todoId ? list.findIndex((t) => t.id === op.todoId) : -1;
+  switch (op.op) {
+    case "add": {
+      const text = typeof op.text === "string" ? op.text.trim() : "";
+      if (text === "") return list;
+      list.push({ id: makeId(), text, done: false, order: list.length });
+      break;
+    }
+    case "update": {
+      if (idx < 0 || !op.patch) return list;
+      const cur = list[idx];
+      const next = { ...cur };
+      if (op.patch.text !== void 0) {
+        const t = op.patch.text.trim();
+        if (t === "") return list;
+        next.text = t;
+      }
+      if (op.patch.done !== void 0) next.done = op.patch.done;
+      if (op.patch.assignee !== void 0) {
+        const a = op.patch.assignee.trim();
+        if (a === "") delete next.assignee;
+        else next.assignee = a;
+      }
+      list[idx] = next;
+      break;
+    }
+    case "delete": {
+      if (idx < 0) return list;
+      list.splice(idx, 1);
+      break;
+    }
+    case "move": {
+      if (idx < 0) return list;
+      const target = idx + (op.direction === -1 ? -1 : 1);
+      if (target < 0 || target >= list.length) return list;
+      const [item] = list.splice(idx, 1);
+      list.splice(target, 0, item);
+      break;
+    }
+  }
+  return list.map((t, i) => ({ ...t, order: i }));
+}
+
 // shared/scheduler.ts
 var ONE_DAY = { value: 1, unit: "d" };
 function diag(level, code, message, taskId, field) {
@@ -48334,9 +48440,12 @@ function normalizePlan(input) {
       owner: normalizePeople(t.owner),
       consultant: normalizePeople(t.consultant),
       ...typeof t.note === "string" ? { note: t.note } : {},
-      ...typeof t.progress === "number" ? { progress: t.progress } : {}
+      ...typeof t.progress === "number" ? { progress: t.progress } : {},
+      // 细分交付清单：恒归一化为数组（可能为空）；空文本/脏项丢弃、id 去重、order 重排。
+      todos: sanitizeTodos(t.todos, t.id)
     });
   }
+  enforceTodoOwnerConsistency(cleaned);
   for (const t of cleaned) {
     if (t.parentId && (!seenIds.has(t.parentId) || t.parentId === t.id)) t.parentId = null;
   }
@@ -48960,13 +49069,27 @@ function inclusiveFinishDate(start, end) {
   if (days <= 1) return start;
   return addDays(end, -1);
 }
+function buildTodoSummary(t) {
+  const todos = (t.todos ?? []).slice().sort((a, b) => a.order - b.order);
+  if (todos.length === 0) return "";
+  const { done, total } = todosProgress(todos);
+  const lines = todos.map((td) => {
+    const mark = td.done ? "[x]" : "[ ]";
+    const who = td.assignee ? `\uFF08${td.assignee}\uFF09` : "";
+    return `${mark} ${td.text}${who}`;
+  });
+  return `TODO\uFF08${done}/${total}\uFF09\uFF1A
+${lines.join("\n")}`;
+}
 function buildNotes(t) {
-  const note = typeof t.note === "string" ? t.note : "";
+  const parts = [];
+  const note = typeof t.note === "string" ? t.note.trim() : "";
+  if (note !== "") parts.push(note);
   const consultants = normalizePeople(t.consultant);
-  if (consultants.length === 0) return note;
-  const line = `\u987E\u95EE\u4EBA\uFF1A${formatPeople(consultants)}`;
-  return note.trim() === "" ? line : `${note}
-${line}`;
+  if (consultants.length > 0) parts.push(`\u987E\u95EE\u4EBA\uFF1A${formatPeople(consultants)}`);
+  const todoSummary = buildTodoSummary(t);
+  if (todoSummary !== "") parts.push(todoSummary);
+  return parts.join("\n");
 }
 function exportFileName(plan, format) {
   const safeName = (plan.name || "\u672A\u547D\u540D\u8BA1\u5212").replace(/[\\/:*?"<>|]/g, "_");
@@ -49169,6 +49292,7 @@ var CSV_HEADER = [
   "\u4F9D\u8D56",
   "\u8D1F\u8D23\u4EBA",
   "\u987E\u95EE\u4EBA",
+  "TODO \u8FDB\u5EA6",
   "\u6765\u6E90",
   "\u5907\u6CE8"
 ];
@@ -49200,6 +49324,8 @@ function toCsv(plan, sched) {
         // 人员列可多人 → 顿号拼接（与表格单元格展示一致）
         csvCell(formatPeople(normalizePeople(t.owner))),
         csvCell(formatPeople(normalizePeople(t.consultant))),
+        // TODO 进度（无项留空，与徽章「—」不同——CSV 用空值更利于 Excel 统计）
+        csvCell(todosProgressText(t.todos)),
         csvCell(c.derivedFrom),
         csvCell(t.note ?? "")
       ].join(",")
@@ -49383,6 +49509,71 @@ var HistoryRepository = class {
 };
 var planRepo = new PlanRepository();
 var historyRepo = new HistoryRepository();
+var TodoRepository = class {
+  empty(planId) {
+    return { schemaVersion: 1, planId, revision: 0, byTask: {} };
+  }
+  /** 读 todos.json；不存在时从 plan.json backfill（老计划无缝过渡），并落盘 */
+  read(planId) {
+    const file = todosFile(planId);
+    if (!import_node_fs3.default.existsSync(file)) {
+      return this.backfill(planId);
+    }
+    try {
+      const obj = readJson(file);
+      const byTask = obj.byTask && typeof obj.byTask === "object" ? obj.byTask : {};
+      const clean = {};
+      for (const [taskId, list] of Object.entries(byTask)) {
+        clean[taskId] = sanitizeTodos(list, taskId);
+      }
+      return {
+        schemaVersion: 1,
+        planId,
+        revision: Number(obj.revision ?? 0),
+        byTask: clean
+      };
+    } catch (e) {
+      console.warn(`[storage] todos.json \u635F\u574F\uFF0C\u91CD\u5EFA\uFF08planId=${planId}\uFF09\uFF1A${String(e)}`);
+      return this.backfill(planId);
+    }
+  }
+  /** 首次访问时从 plan.json 迁移现有 todos（id 已存在于 plan 快照，直接沿用） */
+  backfill(planId) {
+    let byTask = {};
+    try {
+      const plan = planRepo.readPlan(planId);
+      for (const t of plan.tasks) {
+        if (t.todos && t.todos.length > 0) byTask[t.id] = t.todos;
+      }
+    } catch {
+      byTask = {};
+    }
+    const data = { schemaVersion: 1, planId, revision: 0, byTask };
+    this.write(planId, data);
+    return data;
+  }
+  write(planId, data) {
+    atomicWriteJson(todosFile(planId), data);
+  }
+  /**
+   * 对某个任务执行一条 todo 指令（原子读-改-写，revision +1），返回最新 revision 与该任务清单。
+   * 不校验锁——todo 是独立并发资源，任何登录用户都可操作（权限在 routes 层校验 user 非空）。
+   */
+  applyOp(planId, taskId, op) {
+    const data = this.read(planId);
+    const current = data.byTask[taskId] ?? [];
+    const next = applyTodoOp(current, op, makeTodoId);
+    data.byTask[taskId] = next;
+    data.revision += 1;
+    this.write(planId, data);
+    return { revision: data.revision, todos: next };
+  }
+  /** 供保存 plan 时合并：把最新 todos 覆盖回 plan.tasks[].todos（防覆盖并发修改） */
+  snapshot(planId) {
+    return this.read(planId);
+  }
+};
+var todoRepo = new TodoRepository();
 
 // server/mppImport.ts
 var import_node_child_process = require("node:child_process");
@@ -49634,6 +49825,17 @@ function contentDisposition(filename) {
   const ascii = filename.replace(/[^\x20-\x7E]/g, "_");
   return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
 }
+function mergeTodos(plan, byTask) {
+  const merged = {
+    ...plan,
+    tasks: plan.tasks.map((t) => ({ ...t, todos: Array.isArray(byTask[t.id]) ? byTask[t.id] : [] }))
+  };
+  return normalizePlan(merged);
+}
+function readPlanFresh(planId) {
+  const plan = planRepo.readPlan(planId);
+  return mergeTodos(plan, todoRepo.snapshot(planId).byTask);
+}
 function createApiRouter() {
   const router = (0, import_express.Router)();
   router.get(
@@ -49677,7 +49879,7 @@ function createApiRouter() {
     asyncHandler((req, res) => {
       const planId = String(req.params.planId);
       requirePlanExists(planId);
-      ok(res, planRepo.readPlan(planId));
+      ok(res, readPlanFresh(planId));
     })
   );
   router.put(
@@ -49704,8 +49906,13 @@ function createApiRouter() {
         );
         return;
       }
-      const normalized = normalizePlan({
+      const latestByTask = todoRepo.snapshot(planId).byTask;
+      const incomingWithFreshTodos = {
         ...incoming,
+        tasks: incoming.tasks.map((t) => ({ ...t, todos: latestByTask[t.id] ?? [] }))
+      };
+      const normalized = normalizePlan({
+        ...incomingWithFreshTodos,
         planId,
         schemaVersion: 1,
         createdAt: current.createdAt,
@@ -49760,8 +49967,10 @@ function createApiRouter() {
       lockService.assertHolder(planId, editor, lockToken);
       const target = historyRepo.readVersion(planId, version);
       const current = planRepo.readPlan(planId);
+      const latestByTask = todoRepo.snapshot(planId).byTask;
       const restored = normalizePlan({
         ...target.planSnapshot,
+        tasks: target.planSnapshot.tasks.map((t) => ({ ...t, todos: latestByTask[t.id] ?? [] })),
         planId,
         schemaVersion: 1,
         createdAt: current.createdAt,
@@ -49781,7 +49990,7 @@ function createApiRouter() {
       const planId = String(req.params.planId);
       requirePlanExists(planId);
       const format = String(req.query.format ?? "mspdi").toLowerCase() === "csv" ? "csv" : "mspdi";
-      const plan = planRepo.readPlan(planId);
+      const plan = readPlanFresh(planId);
       const cal = buildServerCalendar();
       const sched = schedulePlan(plan, cal);
       const filename = exportFileName(plan, format);
@@ -49854,6 +50063,34 @@ function createApiRouter() {
         } catch {
         }
       }
+    })
+  );
+  router.get(
+    "/plans/:planId/todos",
+    asyncHandler((req, res) => {
+      const planId = String(req.params.planId);
+      requirePlanExists(planId);
+      const data = todoRepo.snapshot(planId);
+      ok(res, { revision: data.revision, byTask: data.byTask });
+    })
+  );
+  router.post(
+    "/plans/:planId/tasks/:taskId/todos",
+    asyncHandler((req, res) => {
+      const planId = String(req.params.planId);
+      const taskId = String(req.params.taskId);
+      requirePlanExists(planId);
+      requireEditor(req.body?.user);
+      const rawOp = req.body?.op;
+      if (!rawOp || typeof rawOp !== "object" || !["add", "update", "delete", "move"].includes(rawOp.op)) {
+        throw new DomainError(ErrCode.ERR_VALIDATION, "\u975E\u6CD5 todo \u6307\u4EE4\uFF08op\uFF09");
+      }
+      const plan = planRepo.readPlan(planId);
+      if (!plan.tasks.some((t) => t.id === taskId)) {
+        throw new DomainError(ErrCode.ERR_VALIDATION, `\u4EFB\u52A1 ${taskId} \u4E0D\u5B58\u5728`);
+      }
+      const resp = todoRepo.applyOp(planId, taskId, rawOp);
+      ok(res, resp);
     })
   );
   router.get(

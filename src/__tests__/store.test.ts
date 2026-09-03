@@ -4,9 +4,11 @@
  * updateCell/addRow 通过 applyPlan → normalizePlan → recompute 落库，无需渲染。
  * 运行：npm test
  */
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createEmptyTask, normalizePlan } from '../../shared/scheduler';
-import { SCHEMA_VERSION, type Plan } from '../../shared/types';
+import { applyTodoOp, makeTodoId } from '../../shared/todo';
+import { SCHEMA_VERSION, type Plan, type TodoItem, type TodoOp } from '../../shared/types';
+import { api } from '../api';
 import { useStore } from '../store';
 
 function makePlan(): Plan {
@@ -26,8 +28,30 @@ function makePlan(): Plan {
   });
 }
 
+/** 模拟服务端 todo 独立资源：applyTodoOp 纯函数 + revision 单调递增（与 TodoRepository.applyOp 同构） */
+function makeTodoServer() {
+  const state: Record<string, TodoItem[]> = {};
+  let revision = 0;
+  const mock = vi
+    .spyOn(api, 'todoOp')
+    .mockImplementation(async (_planId: string, taskId: string, _user: string, op: TodoOp) => {
+      const next = applyTodoOp(state[taskId] ?? [], op, makeTodoId);
+      state[taskId] = next;
+      revision += 1;
+      return { revision, todos: next };
+    });
+  return { mock, getRevision: () => revision };
+}
+
 beforeEach(() => {
-  useStore.setState({ plan: null, dirty: false });
+  vi.restoreAllMocks();
+  useStore.setState({
+    plan: null,
+    dirty: false,
+    session: { user: null, mode: 'READONLY', lockToken: null },
+    todosRevision: 0,
+    todoDrawerTaskId: null,
+  });
 });
 
 describe('f·store owner 动作', () => {
@@ -112,5 +136,96 @@ describe('f·store owner 动作', () => {
     useStore.getState().updatePeople('T-0001', 'owner', ['User02']);
     useStore.getState().updatePeople('T-0001', 'owner', []);
     expect(useStore.getState().plan!.tasks[0].owner).toEqual([]);
+  });
+});
+
+describe('f·store todo 动作', () => {
+  it('addTodo / updateTodo / deleteTodo 走 api.todoOp 即时提交，不置脏（独立资源）', async () => {
+    useStore.setState({ plan: makePlan(), session: { user: 'User01', mode: 'READONLY', lockToken: null } });
+    const server = makeTodoServer();
+
+    await useStore.getState().addTodo('T-0001', '出原理图');
+    await useStore.getState().addTodo('T-0001', '  出BOM  '); // 首尾空白被 trim
+    let todos = useStore.getState().plan!.tasks[0].todos!;
+    expect(todos).toHaveLength(2);
+    expect(todos[0].text).toBe('出原理图');
+    expect(todos[1].text).toBe('出BOM');
+    expect(todos.map((t) => t.order)).toEqual([0, 1]);
+
+    // 走接口（而非 applyPlan），且携带正确参数
+    expect(server.mock).toHaveBeenCalledTimes(2);
+    expect(server.mock.mock.calls[0][0]).toBe('p-store');
+    expect(server.mock.mock.calls[0][1]).toBe('T-0001');
+    expect(server.mock.mock.calls[0][2]).toBe('User01');
+
+    // 勾选完成
+    await useStore.getState().updateTodo('T-0001', todos[0].id, { done: true });
+    todos = useStore.getState().plan!.tasks[0].todos!;
+    expect(todos[0].done).toBe(true);
+
+    // 空文本不更新（清空走 deleteTodo）
+    await useStore.getState().updateTodo('T-0001', todos[0].id, { text: '   ' });
+    expect(useStore.getState().plan!.tasks[0].todos![0].text).toBe('出原理图');
+
+    // 删除
+    await useStore.getState().deleteTodo('T-0001', todos[0].id);
+    expect(useStore.getState().plan!.tasks[0].todos).toHaveLength(1);
+
+    // todo 是独立真源：不改 plan.json → 不置脏
+    expect(useStore.getState().dirty).toBe(false);
+    // revision 随每次指令 +1
+    expect(useStore.getState().todosRevision).toBe(server.getRevision());
+  });
+
+  it('todo.assignee 不在负责人时自动并入负责人（单向只增，经 normalizePlan 派生）', async () => {
+    useStore.setState({ plan: makePlan(), session: { user: 'User01', mode: 'READONLY', lockToken: null } });
+    makeTodoServer();
+
+    await useStore.getState().addTodo('T-0001', '出原理图');
+    const todoId = useStore.getState().plan!.tasks[0].todos![0].id;
+
+    await useStore.getState().updateTodo('T-0001', todoId, { assignee: '张三' });
+    expect(useStore.getState().plan!.tasks[0].owner).toEqual(['张三']);
+
+    // 清掉 assignee 不自动移除已并入的负责人（单向只增）
+    await useStore.getState().updateTodo('T-0001', todoId, { assignee: '' });
+    expect(useStore.getState().plan!.tasks[0].owner).toEqual(['张三']);
+  });
+
+  it('moveTodo 上移/下移走 api.todoOp 提交并重排 order', async () => {
+    useStore.setState({ plan: makePlan(), session: { user: 'User01', mode: 'READONLY', lockToken: null } });
+    makeTodoServer();
+
+    await useStore.getState().addTodo('T-0001', 'A');
+    await useStore.getState().addTodo('T-0001', 'B');
+    await useStore.getState().addTodo('T-0001', 'C');
+    let todos = useStore.getState().plan!.tasks[0].todos!;
+    expect(todos.map((t) => t.text)).toEqual(['A', 'B', 'C']);
+
+    await useStore.getState().moveTodo('T-0001', todos[0].id, 1); // A 下移
+    todos = useStore.getState().plan!.tasks[0].todos!;
+    expect(todos.map((t) => t.text)).toEqual(['B', 'A', 'C']);
+
+    await useStore.getState().moveTodo('T-0001', todos[2].id, -1); // C 上移
+    todos = useStore.getState().plan!.tasks[0].todos!;
+    expect(todos.map((t) => t.text)).toEqual(['B', 'C', 'A']);
+    expect(todos.map((t) => t.order)).toEqual([0, 1, 2]);
+    expect(useStore.getState().dirty).toBe(false);
+  });
+
+  it('未登录时 todo 动作不发起请求（无 user 即 no-op）', async () => {
+    useStore.setState({ plan: makePlan() }); // session.user 保持 null
+    const server = makeTodoServer();
+
+    await useStore.getState().addTodo('T-0001', '出原理图');
+    expect(server.mock).not.toHaveBeenCalled();
+  });
+
+  it('openTodoDrawer / closeTodoDrawer 切换抽屉态', () => {
+    useStore.setState({ plan: makePlan(), todoDrawerTaskId: null });
+    useStore.getState().openTodoDrawer('T-0001');
+    expect(useStore.getState().todoDrawerTaskId).toBe('T-0001');
+    useStore.getState().closeTodoDrawer();
+    expect(useStore.getState().todoDrawerTaskId).toBeNull();
   });
 });

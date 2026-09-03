@@ -26,6 +26,7 @@ import {
 } from '../shared/datetime';
 import { buildIdSeqMaps, formatDepsExpr } from '../shared/scheduler';
 import { formatPeople, normalizePeople } from '../shared/people';
+import { todosProgress, todosProgressText } from '../shared/todo';
 import type {
   DepType,
   ExportFormat,
@@ -93,17 +94,36 @@ function inclusiveFinishDate(start: ISODate, end: ISODate): ISODate {
 }
 
 /**
- * MSPDI 的 Notes 文本 = 用户备注（原样）+ 顾问人（若有）。
+ * 任务的 TODO 交付清单摘要（按 order 排序；无项返回空串）。
+ * 与顾问人一样是「信息附注」，不进 Resource/Assignment。
+ */
+function buildTodoSummary(t: Task): string {
+  const todos = (t.todos ?? []).slice().sort((a, b) => a.order - b.order);
+  if (todos.length === 0) return '';
+  const { done, total } = todosProgress(todos);
+  const lines = todos.map((td) => {
+    const mark = td.done ? '[x]' : '[ ]';
+    const who = td.assignee ? `（${td.assignee}）` : '';
+    return `${mark} ${td.text}${who}`;
+  });
+  return `TODO（${done}/${total}）：\n${lines.join('\n')}`;
+}
+
+/**
+ * MSPDI 的 Notes 文本 = 用户备注（原样）+ 顾问人（若有）+ TODO 交付清单（若有）。
  *
- * 顾问人不生成 Resource/Assignment（用户裁定 2026-09-03）：它只是"该问谁"的信息，
- * 算成资源会让 MS Project 的投入/工时口径失真，因此降级为文本附注。
+ * 顾问人与 todo 均不生成 Resource/Assignment（用户裁定 2026-09-03）：它们只是"该问谁 /
+ * 该交付什么"的信息，算成资源会让 MS Project 的投入/工时口径失真，因此降级为文本附注。
  */
 function buildNotes(t: Task): string {
-  const note = typeof t.note === 'string' ? t.note : '';
+  const parts: string[] = [];
+  const note = typeof t.note === 'string' ? t.note.trim() : '';
+  if (note !== '') parts.push(note);
   const consultants = normalizePeople(t.consultant);
-  if (consultants.length === 0) return note;
-  const line = `顾问人：${formatPeople(consultants)}`;
-  return note.trim() === '' ? line : `${note}\n${line}`;
+  if (consultants.length > 0) parts.push(`顾问人：${formatPeople(consultants)}`);
+  const todoSummary = buildTodoSummary(t);
+  if (todoSummary !== '') parts.push(todoSummary);
+  return parts.join('\n');
 }
 
 /** 文件名：{planName}-v{version}.{ext} */
@@ -360,6 +380,7 @@ const CSV_HEADER = [
   '依赖',
   '负责人',
   '顾问人',
+  'TODO 进度',
   '来源',
   '备注',
 ];
@@ -394,6 +415,8 @@ export function toCsv(plan: Plan, sched: ScheduleResult): string {
         // 人员列可多人 → 顿号拼接（与表格单元格展示一致）
         csvCell(formatPeople(normalizePeople(t.owner))),
         csvCell(formatPeople(normalizePeople(t.consultant))),
+        // TODO 进度（无项留空，与徽章「—」不同——CSV 用空值更利于 Excel 统计）
+        csvCell(todosProgressText(t.todos)),
         csvCell(c.derivedFrom),
         csvCell(t.note ?? ''),
       ].join(','),

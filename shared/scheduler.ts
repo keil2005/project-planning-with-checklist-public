@@ -35,8 +35,10 @@ import {
   type TaskComputed,
   type TaskField,
   type TaskInput,
+  type TodoItem,
 } from './types';
 import { normalizePeople } from './people';
+import { enforceTodoOwnerConsistency, sanitizeTodos } from './todo';
 import {
   addDuration,
   countWorkingDays,
@@ -415,8 +417,14 @@ export function normalizePlan(input: Plan): Plan {
       consultant: normalizePeople(t.consultant),
       ...(typeof t.note === 'string' ? { note: t.note } : {}),
       ...(typeof t.progress === 'number' ? { progress: t.progress } : {}),
+      // 细分交付清单：恒归一化为数组（可能为空）；空文本/脏项丢弃、id 去重、order 重排。
+      todos: sanitizeTodos(t.todos, t.id),
     });
   }
+
+  // ①-b 一致性不变量（单向只增）：todo.assignee 不在负责人/顾问人时自动并入负责人。
+  // 放在 owner/consultant 归一化之后、树形重排之前；只增不自动移除（见 shared/todo.ts）。
+  enforceTodoOwnerConsistency(cleaned);
 
   // ② parentId 合法性（不存在 / 自引用 → 置 null）
   for (const t of cleaned) {

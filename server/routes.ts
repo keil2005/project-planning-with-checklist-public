@@ -27,13 +27,15 @@ import {
   type Plan,
   type SavePlanResp,
   type ScheduleResult,
+  type TodoItem,
+  type TodoOp,
   type WorkCalendar,
 } from '../shared/types';
 import { config, scheduleOptionsFromConfig } from './config';
 import { exportFileName, toCsv, toMsProjectXml } from './exporters';
 import { lockService } from './lockService';
 import * as calendarService from './calendarService';
-import { historyRepo, planRepo } from './storage';
+import { historyRepo, planRepo, todoRepo } from './storage';
 import { importMppFile, mppImportStatus } from './mppImport';
 
 /** 全局工作日历保留资源 id（与 per-plan 锁相互独立，互不阻塞） */
@@ -124,6 +126,27 @@ function contentDisposition(filename: string): string {
   return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
 }
 
+/* ------------------------------ todo 独立资源合并 ------------------------------ */
+
+/**
+ * 方案 B（todo 独立并发）：把 todos.json 的最新清单合并回 plan.tasks[].todos，再 normalizePlan。
+ * normalizePlan 里的 enforceTodoOwnerConsistency 会把最新 assignee 单向并入 owner，
+ * 从而让「todo.assignee 自动并入负责人」在读取路径即时生效（无需写 plan.json）。
+ */
+function mergeTodos(plan: Plan, byTask: Record<string, unknown>): Plan {
+  const merged: Plan = {
+    ...plan,
+    tasks: plan.tasks.map((t) => ({ ...t, todos: Array.isArray(byTask[t.id]) ? (byTask[t.id] as TodoItem[]) : [] })),
+  };
+  return normalizePlan(merged);
+}
+
+/** 读取计划时统一走这里：合并最新 todo 并 enforce owner（读路径的「派生并集」） */
+function readPlanFresh(planId: string): Plan {
+  const plan = planRepo.readPlan(planId);
+  return mergeTodos(plan, todoRepo.snapshot(planId).byTask);
+}
+
 /* ------------------------------ 路由 ------------------------------ */
 
 export function createApiRouter(): Router {
@@ -179,7 +202,7 @@ export function createApiRouter(): Router {
     asyncHandler((req, res) => {
       const planId = String(req.params.planId);
       requirePlanExists(planId);
-      ok(res, planRepo.readPlan(planId));
+      ok(res, readPlanFresh(planId));
     }),
   );
 
@@ -214,9 +237,17 @@ export function createApiRouter(): Router {
         return;
       }
 
+      // todo 独立资源（方案 B）：用最新 todos.json 覆盖提交里的 todos，防止覆盖他人的并发 todo 修改；
+      // 其余字段（排程/依赖/人员等）仍以提交者为准（受排他锁保护）。
+      const latestByTask = todoRepo.snapshot(planId).byTask;
+      const incomingWithFreshTodos: Plan = {
+        ...incoming,
+        tasks: incoming.tasks.map((t) => ({ ...t, todos: latestByTask[t.id] ?? [] })),
+      };
+
       // 规整 + 保留不可变字段
       const normalized = normalizePlan({
-        ...incoming,
+        ...incomingWithFreshTodos,
         planId,
         schemaVersion: 1,
         createdAt: current.createdAt,
@@ -284,8 +315,11 @@ export function createApiRouter(): Router {
 
       const target = historyRepo.readVersion(planId, version);
       const current = planRepo.readPlan(planId);
+      // todo 是独立资源，不随 plan 回滚：回滚目标快照的 todos 用最新 todos.json 覆盖。
+      const latestByTask = todoRepo.snapshot(planId).byTask;
       const restored = normalizePlan({
         ...target.planSnapshot,
+        tasks: target.planSnapshot.tasks.map((t) => ({ ...t, todos: latestByTask[t.id] ?? [] })),
         planId,
         schemaVersion: 1,
         createdAt: current.createdAt,
@@ -309,7 +343,7 @@ export function createApiRouter(): Router {
       const planId = String(req.params.planId);
       requirePlanExists(planId);
       const format = (String(req.query.format ?? 'mspdi').toLowerCase() as ExportFormat) === 'csv' ? 'csv' : 'mspdi';
-      const plan = planRepo.readPlan(planId);
+      const plan = readPlanFresh(planId);
       // 真实工作日历：排程与导出共用同一份（单一真源），绝不 fallback NATURAL
       const cal = buildServerCalendar();
       const sched = schedulePlan(plan, cal);
@@ -396,6 +430,44 @@ export function createApiRouter(): Router {
           /* 清理失败无妨 */
         }
       }
+    }),
+  );
+
+  /* ---------- todo 独立资源（方案 B：多人并发编辑，不要求排他锁） ---------- */
+
+  /** GET /api/plans/:planId/todos —— 全量 { revision, byTask }，供前端初始化 / 轮询 */
+  router.get(
+    '/plans/:planId/todos',
+    asyncHandler((req, res) => {
+      const planId = String(req.params.planId);
+      requirePlanExists(planId);
+      const data = todoRepo.snapshot(planId);
+      ok(res, { revision: data.revision, byTask: data.byTask });
+    }),
+  );
+
+  /** POST /api/plans/:planId/tasks/:taskId/todos —— 指令式写（add/update/delete/move） */
+  router.post(
+    '/plans/:planId/tasks/:taskId/todos',
+    asyncHandler((req, res) => {
+      const planId = String(req.params.planId);
+      const taskId = String(req.params.taskId);
+      requirePlanExists(planId);
+      requireEditor(req.body?.user); // 仅校验身份，不校验排他锁（todo 并发资源）
+
+      const rawOp = req.body?.op as TodoOp | undefined;
+      if (!rawOp || typeof rawOp !== 'object' || !['add', 'update', 'delete', 'move'].includes(rawOp.op)) {
+        throw new DomainError(ErrCode.ERR_VALIDATION, '非法 todo 指令（op）');
+      }
+
+      // 校验 taskId 真实存在（避免向不存在的任务写入孤儿 todo）
+      const plan = planRepo.readPlan(planId);
+      if (!plan.tasks.some((t) => t.id === taskId)) {
+        throw new DomainError(ErrCode.ERR_VALIDATION, `任务 ${taskId} 不存在`);
+      }
+
+      const resp = todoRepo.applyOp(planId, taskId, rawOp);
+      ok(res, resp);
     }),
   );
 
