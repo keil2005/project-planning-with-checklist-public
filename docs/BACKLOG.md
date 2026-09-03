@@ -9,6 +9,16 @@
 - [x] **部署文档与复盘**：`docs/deploy.md`（既有）、`docs/LESSON_LEARN.md`、`docs/BACKLOG.md`。
 
 
+## 本次已落地（2026-09-03）
+- [x] **左侧表格列宽可调**：表头每列右缘 7px 分隔条，拖动调宽（拖期间仅改 CSS 变量、不触发 React 重渲染）、双击按该列最长可见内容自适应、立即写 localStorage（键 `plan-gantt:column-widths:v1`，结构不符自动降级默认值）。
+- [x] **负责人下拉按最长候选撑开**：MUI `slotProps.popper.style` 覆盖默认 `width` 为 `max-content` + min 200 / max 520，三档列宽（90/120/327）实测下拉均为 200 px。
+- [x] **列定义集中化**：原散落在 `TaskTable.tsx` 的 `GRID_COLUMNS` / `MIN_TABLE_WIDTH` 常量外置为 `src/columns.ts` 的 `COLUMNS` 单一真源（key/label/def/min/max），未来增删列只需改一处。
+- [x] **配套单测**：`src/__tests__/columns.test.ts`（**24 用例**）覆盖 COLUMNS 结构、clamp（含 NaN/±Infinity → def）、grid/CSS 变量、load/save（结构不符逐项回落 + localStorage 抛错的降级）、autoFit 的**降级**（离屏测量 → null）与**正向计算**（装饰宽 + 最长文本 + padding，含缩进层级与 clamp）。
+- [x] **autoFitWidth 兜底口径修正**：原用「行总宽 ≤ 0」判断测量失效，但 name 列的装饰宽（缩进 + 折叠三角）本身就 > 0，导致离屏环境下会把列错误地夹到 min。改为用**纯文字宽度** `textMax` 判断 → 测量不可用则保持原样不改列宽。真实浏览器行为不变（已用 Project-A 复验，数值与修正前逐一相同）。
+- [x] **文档**：`docs/prd_increment_column_widths.md`、`docs/design_increment_column_widths.md`。
+- **数据**：playwright 真实浏览器实测 31Jul + Project-A 两个计划，Project-A 双击「任务名称」260→282（最长 32 字符任务名「Internal part supplier selection」）、双击「依赖」110→210、双击「开始/结束」96→136、双击「时长」78→60（命中 min）。
+- **全量单测**：252 → **276** 全绿（14 个套件）；`tsc --noEmit` 0 错误；改后已重新 `vite build` 并重启本机服务复验。
+
 ## 本次已落地（2026-09-02）
 - [x] **roster 名单裁定：User14 保留**（用户裁定原文「user14要留的，且清单内放在user13后面」）。现状本就满足（索引 13，紧随 `User13` 索引 12），本次补齐的是**四处遗漏的同步**：
   - 代码：`shared/roster.ts` 头注释（索引 0..19 → 0..20，共 21 人）；`shared/__tests__/roster.test.ts`（长度 20→21、逐项数组插入 `User14`、尾部索引 17/18→18/19）；`server/__tests__/api.smoke.test.ts` 与 `server/__tests__/assignee.test.ts` 的 `GET /api/users` 期望（20→21，并新增断言 `User13`=12 / `User14`=13 锁定相对顺序）。

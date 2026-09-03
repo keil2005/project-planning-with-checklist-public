@@ -212,20 +212,28 @@ export function autoFitWidth(index: number, input: AutoFitInput): number | null 
   if (!col) return null;
   if (col.key === 'actions') return null;
 
-  let max = measureTextWidth(col.label);
+  // 纯文字宽度（表头 + 各行文本），用于判断"测量是否可用"
+  let textMax = measureTextWidth(col.label);
+  // 行所需总宽（文字 + 该列的非文字装饰：缩进/折叠三角/日历按钮）
+  let rowMax = 0;
+
   const rows = input.tasks.length > AUTOFIT_MAX_ROWS ? input.tasks.slice(0, AUTOFIT_MAX_ROWS) : input.tasks;
 
   for (const t of rows) {
     const chrome = columnChrome(col.key, input.depthOf(t), input.isParentOf(t));
     let rowWidth = chrome;
     for (const s of columnTexts(t, col.key, input.depsTextOf(t))) {
-      rowWidth += measureTextWidth(s);
+      const w = measureTextWidth(s);
+      if (w > textMax) textMax = w;
+      rowWidth += w;
     }
-    if (rowWidth > max) max = rowWidth;
+    if (rowWidth > rowMax) rowMax = rowWidth;
   }
 
-  // 测不出宽度（离屏环境）时不做任何改动，交给调用方保持原样
-  if (max <= 0) return null;
+  // 测不出文字宽度（离屏环境 / 测量被禁用）时不做任何改动，交给调用方保持原样。
+  // 注意不能用 rowMax <= 0 判断——装饰宽度（缩进、折叠三角）本身就 > 0，
+  // 那样会把列宽错误地夹到下限。
+  if (textMax <= 0) return null;
 
-  return clampWidth(index, max + AUTOFIT_PADDING);
+  return clampWidth(index, Math.max(textMax, rowMax) + AUTOFIT_PADDING);
 }
