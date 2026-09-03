@@ -36,6 +36,9 @@ import FormatIndentDecreaseIcon from '@mui/icons-material/FormatIndentDecrease';
 import FormatIndentIncreaseIcon from '@mui/icons-material/FormatIndentIncrease';
 import { useCanEdit, useOwnerCandidates, useStore, useVisibleTasks } from '../store';
 import DatePickerPopover from './DatePickerPopover';
+import { FilterBar } from './FilterBar';
+import ColumnFilterMenu from './ColumnFilterMenu';
+import { isFilterActive, isFilterable } from '../filter';
 import {
   COLUMNS,
   COL_VAR_NAMES,
@@ -453,13 +456,18 @@ interface RowProps {
   idToSeq: Map<string, number>;
   diagnostics: Diagnostic[] | undefined;
   canEdit: boolean;
+  /**
+   * 能否插入新行。与 canEdit 分开：筛选生效时禁止插入
+   * （新行多半不满足当前筛选条件，一点「+」就消失，像没生效）。
+   */
+  canAdd: boolean;
   selected: boolean;
   /** 列宽由滚动容器上的 CSS 变量驱动，这里只放不随列宽变化的部分 */
   gridStyle: CSSProperties;
 }
 
 function TaskRow(props: RowProps): JSX.Element {
-  const { task, computed, depth, isParent, collapsed, idToSeq, diagnostics, canEdit, selected, gridStyle } = props;
+  const { task, computed, depth, isParent, collapsed, idToSeq, diagnostics, canEdit, canAdd, selected, gridStyle } = props;
 
   const updateCell = useStore((s) => s.updateCell);
   const updatePeople = useStore((s) => s.updatePeople);
@@ -504,7 +512,10 @@ function TaskRow(props: RowProps): JSX.Element {
   const parentTip = '由子任务汇总，不可手填';
   const timeDisabled = !canEdit || isParent;
 
-  const onEnterNewRow = (): void => addRow(task.id);
+  // 筛选生效时不允许插入：新行会被立刻过滤掉，看起来像「点了没反应」
+  const onEnterNewRow = (): void => {
+    if (canAdd) addRow(task.id);
+  };
 
   /** 时间字段提交：手填落到非工作日时，挂起确认弹窗；否则直接写 input */
   const commitTime = (field: 'start' | 'end', value: string): void => {
@@ -679,9 +690,16 @@ function TaskRow(props: RowProps): JSX.Element {
 
       {/* 行操作 */}
       <div className="pg-cell justify-end gap-0">
-        <Tooltip title="在下方插入同级行（Enter）">
+        <Tooltip title={canAdd ? '在下方插入同级行（Enter）' : '请先清除筛选，再插入新行'}>
           <span>
-            <IconButton size="small" disabled={!canEdit} onClick={() => addRow(task.id)} style={{ padding: 2 }}>
+            <IconButton
+              size="small"
+              disabled={!canAdd}
+              onClick={() => addRow(task.id)}
+              style={{ padding: 2 }}
+              /* 显式 aria-label：Tooltip 的文案只挂在外层 span 上，按钮本身读不到 */
+              aria-label={canAdd ? '在下方插入同级行（Enter）' : '请先清除筛选，再插入新行'}
+            >
               <AddIcon fontSize="small" />
             </IconButton>
           </span>
@@ -748,6 +766,9 @@ export default function TaskTable({ scrollRef, onScroll }: TaskTableProps): JSX.
   const addRow = useStore((s) => s.addRow);
   const canEdit = useCanEdit();
   const visible = useVisibleTasks();
+  const filter = useStore((s) => s.filter);
+  /** 是否有筛选生效：此时禁止插入新行（新行多半不满足条件，会被立刻隐藏） */
+  const filtering = isFilterActive(filter);
 
   const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
@@ -883,10 +904,19 @@ export default function TaskTable({ scrollRef, onScroll }: TaskTableProps): JSX.
     else if (r.bottom > bottom) box.scrollTop += r.bottom - bottom;
   }, [selectedTaskId, scrollRef]);
 
-  if (!plan) return <div className="pg-scroll" />;
+  // 未打开计划时也要渲染等高筛选条：与右侧甘特容器保持同高（K16 滚动同步）
+  if (!plan) {
+    return (
+      <div className="flex h-full flex-col overflow-hidden border-r border-slate-200 bg-white">
+        <div className="pg-filter-bar" />
+        <div className="pg-scroll" />
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full flex-col overflow-hidden border-r border-slate-200 bg-white">
+      <FilterBar />
       <div ref={scrollRef} className="pg-scroll" onScroll={onScroll} style={containerVars}>
         {/* 表头（每列右缘有分隔条，可拖拽调宽 / 双击自适应） */}
         <div className="pg-head pg-sticky-head text-[12px]" style={headStyle}>
@@ -898,6 +928,7 @@ export default function TaskTable({ scrollRef, onScroll }: TaskTableProps): JSX.
               }`}
             >
               <span className="pg-th-label">{c.label}</span>
+              {isFilterable(c.key) && <ColumnFilterMenu columnKey={c.key} label={c.label} />}
               {i < COLUMNS.length - 1 && (
                 <span
                   className={`pg-col-resizer ${dragIndex === i ? 'pg-col-resizer--active' : ''}`}
@@ -928,6 +959,7 @@ export default function TaskTable({ scrollRef, onScroll }: TaskTableProps): JSX.
               idToSeq={idToSeq}
               diagnostics={diagByTask.get(t.id)}
               canEdit={canEdit}
+              canAdd={canEdit && !filtering}
               selected={selectedTaskId === t.id}
               gridStyle={gridStyle}
             />
@@ -940,7 +972,8 @@ export default function TaskTable({ scrollRef, onScroll }: TaskTableProps): JSX.
           <div className="pg-cell">
             <button
               type="button"
-              disabled={!canEdit}
+              disabled={!canEdit || filtering}
+              title={filtering ? '请先清除筛选，再插入新行' : undefined}
               onClick={() => addRow()}
               className="text-[12px] text-blue-600 disabled:cursor-not-allowed disabled:text-slate-400"
             >
@@ -959,11 +992,11 @@ export default function TaskTable({ scrollRef, onScroll }: TaskTableProps): JSX.
         <div style={{ height: ROW_H * 2 }} />
       </div>
 
-      {!canEdit && (
-        <div className="border-t border-slate-200 bg-slate-50 px-3 py-1 text-[12px] text-slate-500">
-          只读模式：点击工具栏「编辑」获取编辑权后方可修改
-        </div>
-      )}
+      {/* 底部状态条：与右侧甘特图例条共用 .pg-panel-footer，两侧**恒定等高**。
+          原先只在只读态渲染，导致只读态比甘特侧矮 2px → 滚到底时 scrollTop 同步被 clamp（K16）。 */}
+      <div className="pg-panel-footer">
+        {canEdit ? '编辑模式：改完记得点工具栏「保存」' : '只读模式：点击工具栏「编辑」获取编辑权后方可修改'}
+      </div>
     </div>
   );
 }
