@@ -36,6 +36,7 @@ import {
   type TaskField,
   type TaskInput,
 } from './types';
+import { normalizePeople } from './people';
 import {
   addDuration,
   countWorkingDays,
@@ -401,8 +402,12 @@ export function normalizePlan(input: Plan): Plan {
       input: sanitizeInput(t.input),
       deps: sanitizeDeps(t.deps),
       collapsed: t.collapsed === true,
+      // 人员字段（负责人 / 顾问人）：恒归一化为数组。
+      // 历史数据的 owner 是 string（可能手打过 "User01,User13"），normalizePeople 会自动拆成数组；
+      // 旧计划缺失 consultant → 空数组。写回后即完成升级，无需单独的 schemaVersion 迁移脚本。
+      owner: normalizePeople(t.owner),
+      consultant: normalizePeople(t.consultant),
       ...(typeof t.note === 'string' ? { note: t.note } : {}),
-      ...(typeof t.owner === 'string' ? { owner: t.owner } : {}),
       ...(typeof t.progress === 'number' ? { progress: t.progress } : {}),
     });
   }

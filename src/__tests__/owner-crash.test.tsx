@@ -15,7 +15,7 @@ import TaskTable from '../components/TaskTable';
 
 function makePlan(): Plan {
   const t = createEmptyTask('T-0001', 1, null, '任务A');
-  t.owner = '';
+  t.owner = [];
   return normalizePlan({
     schemaVersion: SCHEMA_VERSION,
     planId: 'p-crash',
@@ -73,7 +73,7 @@ describe('P0-A 负责人单元格不闪退', () => {
       await new Promise((r) => setTimeout(r, 20));
     });
 
-    expect(useStore.getState().plan!.tasks[0].owner).toBe('User01');
+    expect(useStore.getState().plan!.tasks[0].owner).toEqual(['User01']);
     // 关键：ErrorBoundary 不应被触发（白屏恢复文案不该出现）
     expect(screen.queryByText(/界面出现渲染错误/)).toBeNull();
     // 不应出现 removeChild / 渲染期异常

@@ -43,6 +43,7 @@ import {
   type WorkCalendar,
   type ZoomLevel,
 } from '../shared/types';
+import { collectPeople, normalizePeople, type PeopleField } from '../shared/people';
 
 /* ============================ 类型 ============================ */
 
@@ -140,7 +141,13 @@ export interface StoreState {
   /** 保存工作日历配置（先持 GLOBAL_CALENDAR 锁，再 PUT /api/calendar） */
   saveCalendarConfig: (cfg: CalendarConfigData, editor: string) => Promise<void>;
 
+  /** 文本类单元格（开始/结束/时长/依赖/名称） */
   updateCell: (taskId: string, field: TaskField, value: string) => void;
+  /**
+   * 人员类单元格（负责人 / 顾问人）：整段替换名单。
+   * 走独立动作而非 updateCell，因为值是 string[] 且需要归一化（trim / 去重 / 去空）。
+   */
+  updatePeople: (taskId: string, field: PeopleField, names: string[]) => void;
   addRow: (afterTaskId?: string) => void;
   deleteRow: (taskId: string) => void;
   indent: (taskId: string) => void;
@@ -550,18 +557,7 @@ export const useStore = create<StoreState>((set, get) => {
         return;
       }
 
-      if (field === 'owner') {
-        // 负责人：trim 首尾空白、保留中间空格、不做大小写归一；空串即清空。
-        // 复用 applyPlan → 自动置脏 + 重算（owner 不参与排程，见 K20）。
-        const v = value.trim();
-        applyPlan((draft) => {
-          const t = draft.tasks.find((x) => x.id === taskId);
-          if (t && (t.owner ?? '') !== v) {
-            t.owner = v;
-          }
-        });
-        return;
-      }
+      // 人员字段（负责人 / 顾问人）是 string[]，不走这里，见 updatePeople。
 
       applyPlan((draft) => {
         const t = draft.tasks.find((x) => x.id === taskId);
@@ -575,6 +571,25 @@ export const useStore = create<StoreState>((set, get) => {
       });
     },
 
+    /**
+     * 人员字段（负责人 / 顾问人）整段替换。
+     * 归一化（trim / 去空 / 大小写不敏感去重）交给 normalizePeople，保证落盘形态唯一。
+     * 复用 applyPlan → 自动置脏 + 重算（人员不参与排程，见 K20）。
+     */
+    updatePeople: (taskId: string, field: PeopleField, names: string[]) => {
+      if (!get().plan) return;
+      const next = normalizePeople(names);
+      applyPlan((draft) => {
+        const t = draft.tasks.find((x) => x.id === taskId);
+        if (!t) return;
+        const prev = field === 'owner' ? t.owner : t.consultant;
+        // 内容相同则跳过，避免无意义置脏（用户只是点开又关掉也会走一次提交）
+        if (prev && prev.length === next.length && prev.every((v, i) => v === next[i])) return;
+        if (field === 'owner') t.owner = next;
+        else t.consultant = next;
+      });
+    },
+
     addRow: (afterTaskId?: string) => {
       const plan = get().plan;
       if (!plan) return;
@@ -583,8 +598,9 @@ export const useStore = create<StoreState>((set, get) => {
         const after = afterTaskId ? draft.tasks.find((t) => t.id === afterTaskId) : undefined;
         const parentId = after ? after.parentId : null;
         const task: Task = createEmptyTask(newId, 0, parentId, '');
-        // 显式补 owner 默认，避免 undefined（createEmptyTask 不动，守「排程引擎不动」红线）
-        task.owner = '';
+        // 显式补人员字段默认，避免 undefined（createEmptyTask 不动，守「排程引擎不动」红线）
+        task.owner = [];
+        task.consultant = [];
         if (after) {
           const [, to] = subtreeRange(draft.tasks, after.id);
           draft.tasks.splice(to, 0, task);
@@ -923,15 +939,19 @@ export function useVisibleTasks(): Task[] {
   return useStore((s) => (s.plan ? computeVisibleTasks(s.plan.tasks) : []));
 }
 
-/** 负责人联想候选：固定名单（原序）+ 本 plan 内已用过的名单外姓名（去重、排其后，P1-5） */
+/**
+ * 人员联想候选：固定名单（原序）+ 本 plan 内已用过的名单外姓名（去重、排其后，P1-5）。
+ * 负责人与顾问人共用一份候选（两列的录入范围一致，见 U02）。
+ */
 export function useOwnerCandidates(): string[] {
   return useStore((s) => {
     const base = BUILTIN_USERS as readonly string[];
     const extra = new Set<string>();
     if (s.plan) {
       for (const t of s.plan.tasks) {
-        const o = t.owner?.trim();
-        if (o && !base.includes(o)) extra.add(o);
+        for (const p of collectPeople(t)) {
+          if (!base.includes(p)) extra.add(p);
+        }
       }
     }
     return [...base, ...extra];

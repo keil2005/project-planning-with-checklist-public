@@ -16,6 +16,7 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type MutableRefObject } from 'react';
 import { useStore, useVisibleTasks } from '../store';
 import { formatDepLabel } from '../../shared/scheduler';
+import { formatPeople } from '../../shared/people';
 import { addDays, diffDays, formatDuration, formatISODate, parseISODate, todayISO } from '../../shared/datetime';
 import {
   DAY_WIDTH,
@@ -507,6 +508,8 @@ export default function GanttChart({ scrollRef, onScroll }: GanttChartProps): JS
               const w = Math.max(2, xOf(c.end) - x);
               const cy = i * ROW_H + ROW_H / 2;
               const hasErr = errorTasks.has(t.id);
+              // 人员可多人 → 顿号拼接；顾问人按裁定不上条（只作备注信息）
+              const ownerText = formatPeople(t.owner);
               const onEnter = (e: MouseEvent<SVGGElement>): void => {
                 setHover({ x: x + Math.min(w, 120), y: i * ROW_H, task: t, computed: c });
                 e.stopPropagation();
@@ -529,10 +532,10 @@ export default function GanttChart({ scrollRef, onScroll }: GanttChartProps): JS
                     <path d={d} fill={COLOR.summary} stroke={hasErr ? COLOR.barError : COLOR.summary} />
                     <text x={x + w + 6} y={cy + 4} style={{ fontSize: 11, fontWeight: 600 }}>
                       <tspan>{t.name}</tspan>
-                      {t.owner && dayWidth >= 6 && (
+                      {ownerText !== '' && dayWidth >= 6 && (
                         <tspan fill="#94a3b8" fontWeight={400}>
                           {' · '}
-                          {t.owner}
+                          {ownerText}
                         </tspan>
                       )}
                     </text>
@@ -556,8 +559,8 @@ export default function GanttChart({ scrollRef, onScroll }: GanttChartProps): JS
                   />
                   <text x={x + w + 6} y={cy + 4} style={{ fontSize: 11 }}>
                     <tspan>{t.name}</tspan>
-                    {t.owner && dayWidth >= 6 && (
-                      <tspan fill="#94a3b8">{' · '}{t.owner}</tspan>
+                    {ownerText !== '' && dayWidth >= 6 && (
+                      <tspan fill="#94a3b8">{' · '}{ownerText}</tspan>
                     )}
                   </text>
                 </g>

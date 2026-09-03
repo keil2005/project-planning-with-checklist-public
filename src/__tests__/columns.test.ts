@@ -24,11 +24,18 @@ import {
 import { createEmptyTask } from '../../shared/scheduler';
 
 describe('U01 列宽：COLUMNS 常量结构', () => {
-  it('8 列、顺序与 grid 模板一致、key 唯一', () => {
-    expect(COLUMNS.length).toBe(8);
+  it('9 列、顺序与 grid 模板一致、key 唯一', () => {
+    expect(COLUMNS.length).toBe(9);
     const keys = COLUMNS.map((c) => c.key);
-    expect(keys).toEqual(['seq', 'name', 'start', 'end', 'duration', 'deps', 'owner', 'actions']);
-    expect(new Set(keys).size).toBe(8);
+    expect(keys).toEqual(['seq', 'name', 'start', 'end', 'duration', 'deps', 'owner', 'consultant', 'actions']);
+    expect(new Set(keys).size).toBe(9);
+  });
+
+  it('顾问人列紧跟负责人、在操作列之前', () => {
+    const keys = COLUMNS.map((c) => c.key);
+    expect(keys.indexOf('consultant')).toBe(keys.indexOf('owner') + 1);
+    expect(keys.indexOf('consultant')).toBe(keys.indexOf('actions') - 1);
+    expect(COLUMNS[keys.indexOf('consultant')].label).toBe('顾问人');
   });
 
   it('每列 min ≤ def ≤ max（合法范围）', () => {
@@ -133,76 +140,115 @@ describe('U01 列宽：loadWidths / saveWidths（localStorage mock）', () => {
   });
 
   it('saveWidths 后 loadWidths 能完整还原（不丢精度）', () => {
-    const widths = [60, 300, 100, 100, 80, 120, 130, 140];
+    const widths = [60, 300, 100, 100, 80, 120, 130, 140, 150];
     saveWidths(widths, 'p-A');
     expect(loadWidths('p-A')).toEqual(widths);
   });
 
+  it('落盘形态是按列名的对象，不是按下标的数组', () => {
+    const widths = [60, 300, 100, 100, 80, 120, 130, 140, 150];
+    saveWidths(widths, 'p-A');
+    const raw = store.get('plan-gantt:colw:v3:p-A')!;
+    const parsed = JSON.parse(raw) as Record<string, number>;
+    expect(Array.isArray(parsed)).toBe(false);
+    expect(parsed.name).toBe(300);
+    expect(parsed.consultant).toBe(140);
+    expect(parsed.actions).toBe(150);
+  });
+
   it('每个计划各存一份，互不干扰（键带 planId）', () => {
-    const a = [60, 300, 100, 100, 80, 120, 130, 140];
-    const b = [52, 700, 96, 96, 78, 110, 120, 136];
+    const a = [60, 300, 100, 100, 80, 120, 130, 140, 150];
+    const b = [52, 700, 96, 96, 78, 110, 120, 120, 136];
     saveWidths(a, 'p-A');
     saveWidths(b, 'p-B');
     expect(loadWidths('p-A')).toEqual(a);
     expect(loadWidths('p-B')).toEqual(b);
     // 落到了两个不同的键上
-    expect(store.has('plan-gantt:colw:v2:p-A')).toBe(true);
-    expect(store.has('plan-gantt:colw:v2:p-B')).toBe(true);
+    expect(store.has('plan-gantt:colw:v3:p-A')).toBe(true);
+    expect(store.has('plan-gantt:colw:v3:p-B')).toBe(true);
   });
 
   it('未调过宽度的计划不受其它计划影响，回退到默认值', () => {
-    saveWidths([60, 300, 100, 100, 80, 120, 130, 140], 'p-A');
+    saveWidths([60, 300, 100, 100, 80, 120, 130, 140, 150], 'p-A');
     expect(loadWidths('p-C')).toEqual(defaultWidths());
   });
 
-  it('v1 全局键迁移：本计划无专属键时，用旧的全局宽度作初值（不丢用户设置）', () => {
+  it('v1 全局键迁移：按下标数组 → 按列名映射，新增的顾问人列取默认而不是被操作列顶替', () => {
+    // v1 时代 8 列：[seq, name, start, end, duration, deps, owner, actions]
     const legacy = [52, 465, 96, 96, 78, 101, 120, 136];
     store.set('plan-gantt:column-widths:v1', JSON.stringify(legacy));
-    // 计划 A、B 都还没存过 → 都继承 v1 全局值
-    expect(loadWidths('p-A')).toEqual(legacy);
-    expect(loadWidths('p-B')).toEqual(legacy);
-    // 一旦某计划自己存过，就以它自己的为准
-    const own = [52, 200, 96, 96, 78, 110, 120, 136];
-    saveWidths(own, 'p-A');
-    expect(loadWidths('p-A')).toEqual(own);
-    expect(loadWidths('p-B')).toEqual(legacy); // B 仍吃 v1 值，不受 A 影响
+    const got = loadWidths('p-A');
+    expect(got).toHaveLength(COLUMNS.length);
+    // 位置语义正确：actions(最后) 仍是 136，而不是被挪到顾问人列上
+    expect(got[0]).toBe(52);
+    expect(got[1]).toBe(465);
+    expect(got[5]).toBe(101);
+    expect(got[6]).toBe(120); // owner
+    expect(got[7]).toBe(COLUMNS[7].def); // consultant → 默认 120（不是旧 actions 的 136）
+    expect(got[8]).toBe(136); // actions 仍是 136
   });
 
-  it('迁移只读不写：读 v1 值不会凭空生成 v2 键', () => {
+  it('v2 本计划键迁移：同样按列名还原，且与 v1 全局值互不影响', () => {
+    const legacy = [52, 465, 96, 96, 78, 101, 120, 136];
+    store.set('plan-gantt:colw:v2:p-A', JSON.stringify(legacy));
+    store.set('plan-gantt:column-widths:v1', JSON.stringify([52, 999, 96, 96, 78, 110, 120, 136]));
+    // 本计划有 v2 键 → 优先用它，不看 v1
+    expect(loadWidths('p-A')[1]).toBe(465);
+    expect(loadWidths('p-A')[8]).toBe(136);
+    // 没有 v2 键的计划才吃 v1
+    expect(loadWidths('p-B')[1]).toBe(960); // 999 超过 name 的 max=960，被 clamp
+  });
+
+  it('迁移只读不写：读历史值不会凭空生成 v3 键', () => {
     store.set('plan-gantt:column-widths:v1', JSON.stringify([52, 465, 96, 96, 78, 101, 120, 136]));
     loadWidths('p-A');
-    expect(store.has('plan-gantt:colw:v2:p-A')).toBe(false);
+    expect(store.has('plan-gantt:colw:v3:p-A')).toBe(false);
   });
 
   it('loadWidths 在空存储时回退到默认值', () => {
     expect(loadWidths('p-A')).toEqual(defaultWidths());
   });
 
-  it('loadWidths 在结构不符（数组长度错 / 元素类型错）时回退到默认值', () => {
-    store.set('plan-gantt:colw:v2:p-A', JSON.stringify([60, 300]));           // 长度错
-    expect(loadWidths('p-A')).toEqual(defaultWidths());
-    // 长度对但第 2 项是字符串：合法项保留，非法项回落到该列默认值
-    store.set('plan-gantt:colw:v2:p-A', JSON.stringify([60, 'oops', 100, 100, 80, 120, 130, 140]));
-    expect(loadWidths('p-A')).toEqual([60, COLUMNS[1].def, 100, 100, 80, 120, 130, 140]);
+  it('按列名存储后，缺失的列取默认、多余的键被忽略', () => {
+    // 只存了两列
+    store.set('plan-gantt:colw:v3:p-A', JSON.stringify({ name: 400, owner: 200 }));
+    const got = loadWidths('p-A');
+    expect(got[1]).toBe(400);
+    expect(got[6]).toBe(200);
+    expect(got[0]).toBe(COLUMNS[0].def);
+    expect(got[8]).toBe(COLUMNS[8].def);
+
+    // 多一个不存在的列名 → 忽略，不影响其它
+    store.set('plan-gantt:colw:v3:p-A', JSON.stringify({ name: 400, ghost: 777 }));
+    expect(loadWidths('p-A')[1]).toBe(400);
+    expect(loadWidths('p-A')).toHaveLength(COLUMNS.length);
   });
 
-  it('本计划键损坏时回退默认值，不会串到 v1 全局值', () => {
-    store.set('plan-gantt:colw:v2:p-A', JSON.stringify([60, 300])); // 长度错 → 该键作废
+  it('loadWidths 逐列回落：某列值类型错只影响该列', () => {
+    store.set('plan-gantt:colw:v3:p-A', JSON.stringify({ seq: 60, name: 'oops', consultant: null }));
+    const got = loadWidths('p-A');
+    expect(got[0]).toBe(60);
+    expect(got[1]).toBe(COLUMNS[1].def);
+    expect(got[7]).toBe(COLUMNS[7].def);
+  });
+
+  it('本计划键内容损坏时回退默认值，不会串到 v1 全局值', () => {
+    store.set('plan-gantt:colw:v3:p-A', '{ 这不是 JSON');
     store.set('plan-gantt:column-widths:v1', JSON.stringify([52, 465, 96, 96, 78, 101, 120, 136]));
     expect(loadWidths('p-A')).toEqual(defaultWidths());
   });
 
   it('loadWidths 把越界值 clamp 到合法区间后再还原', () => {
     // 把 name 列塞到 999999（超过 max=960）和 5（低于 min=120）
-    store.set('plan-gantt:colw:v2:p-A', JSON.stringify([52, 999999, 96, 96, 78, 110, 120, 136]));
-    expect(loadWidths('p-A')).toEqual([52, 960, 96, 96, 78, 110, 120, 136]);
+    store.set('plan-gantt:colw:v3:p-A', JSON.stringify({ name: 999999 }));
+    expect(loadWidths('p-A')[1]).toBe(960);
 
-    store.set('plan-gantt:colw:v2:p-A', JSON.stringify([52, 5, 96, 96, 78, 110, 120, 136]));
-    expect(loadWidths('p-A')).toEqual([52, 120, 96, 96, 78, 110, 120, 136]);
+    store.set('plan-gantt:colw:v3:p-A', JSON.stringify({ name: 5 }));
+    expect(loadWidths('p-A')[1]).toBe(120);
   });
 
   it('planId 为空 / undefined 时走 v1 全局键（兼容无计划上下文的调用）', () => {
-    const w = [60, 300, 100, 100, 80, 120, 130, 140];
+    const w = [60, 300, 100, 100, 80, 120, 130, 140, 150];
     saveWidths(w, null);
     expect(store.has('plan-gantt:column-widths:v1')).toBe(true);
     expect(loadWidths(null)).toEqual(w);

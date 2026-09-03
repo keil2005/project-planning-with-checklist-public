@@ -11,10 +11,20 @@
 
 import type { CSSProperties } from 'react';
 import type { Task } from '../shared/types';
+import { formatPeople } from '../shared/people';
 
 /* ============================ 类型 ============================ */
 
-export type ColumnKey = 'seq' | 'name' | 'start' | 'end' | 'duration' | 'deps' | 'owner' | 'actions';
+export type ColumnKey =
+  | 'seq'
+  | 'name'
+  | 'start'
+  | 'end'
+  | 'duration'
+  | 'deps'
+  | 'owner'
+  | 'consultant'
+  | 'actions';
 
 export interface ColumnDef {
   key: ColumnKey;
@@ -39,6 +49,7 @@ export const COLUMNS: ColumnDef[] = [
   { key: 'duration', label: '时长', def: 78, min: 60, max: 200 },
   { key: 'deps', label: '依赖', def: 110, min: 80, max: 360 },
   { key: 'owner', label: '负责人', def: 120, min: 90, max: 360 },
+  { key: 'consultant', label: '顾问人', def: 120, min: 90, max: 360 },
   { key: 'actions', label: '操作', def: 136, min: 110, max: 260 },
 ];
 
@@ -52,23 +63,47 @@ export const AUTOFIT_PADDING = 26;
 const AUTOFIT_MAX_ROWS = 400;
 
 /**
- * 列宽存储的键前缀。
+ * 列宽存储的键前缀（v3）。
  *
  * 设计取舍（用户裁定 2026-09-03：列宽按计划独立记忆）：
- * 每个计划一个独立键 `plan-gantt:colw:v2:<planId>`，而不是把所有计划塞进一个大 JSON。
+ * 每个计划一个独立键 `plan-gantt:colw:v3:<planId>`，而不是把所有计划塞进一个大 JSON。
  * 理由：① 写一次只影响一个计划，不必读改写整个对象；② 单个键损坏只丢该计划，不连带全部；
  * ③ 计划数量有限，键数量可控。
+ *
+ * ★ v3 起**按列名存对象**（`{ seq: 52, name: 465, ... }`），不再按下标存数组。
+ *   起因是 2026-09-03 新增「顾问人」列：数组按下标读取会把旧的第 8 项（操作列 136）
+ *   顶到新增的顾问人列上，用户调好的宽度语义全错。改成按列名后，增删列都自动安全：
+ *   存里没有的列取默认，存里有但已删除的列被忽略。
  */
-const STORAGE_KEY_PREFIX = 'plan-gantt:colw:v2:';
+const STORAGE_KEY_PREFIX = 'plan-gantt:colw:v3:';
+
+/** v2 的键前缀（按下标存数组）。保留仅用于迁移，读取后按 LEGACY_LAYOUT 还原语义。 */
+const LEGACY_V2_KEY_PREFIX = 'plan-gantt:colw:v2:';
 
 /**
- * v1 的全局单键（所有计划共用一份列宽）。保留用于迁移：
+ * v1 的全局单键（所有计划共用一份列宽，按下标存数组）。保留仅用于迁移：
  * 升级后首次打开某个计划时，用它作为初值，用户之前调好的宽度不丢。
  */
-const LEGACY_STORAGE_KEY = 'plan-gantt:column-widths:v1';
+const LEGACY_V1_KEY = 'plan-gantt:column-widths:v1';
+
+/**
+ * v1 / v2 时代的列顺序（8 列，尚无「顾问人」）。
+ * 迁移数组 → 对象时的唯一解释依据；将来若再有增删列，这张表**不要改**，
+ * 它描述的是历史事实，不是当前布局。
+ */
+const LEGACY_LAYOUT: readonly ColumnKey[] = [
+  'seq',
+  'name',
+  'start',
+  'end',
+  'duration',
+  'deps',
+  'owner',
+  'actions',
+] as const;
 
 function storageKeyFor(planId: string | null | undefined): string {
-  return planId ? `${STORAGE_KEY_PREFIX}${planId}` : LEGACY_STORAGE_KEY;
+  return planId ? `${STORAGE_KEY_PREFIX}${planId}` : LEGACY_V1_KEY;
 }
 
 /* ============================ 宽度读写 ============================ */
@@ -85,30 +120,66 @@ export function clampWidth(index: number, w: number): number {
   return Math.round(Math.min(Math.max(w, c.min), c.max));
 }
 
-/** 解析一行存储值：结构不符时逐项回退，能救回几列算几列 */
-function parseWidths(raw: string): number[] {
-  const def = defaultWidths();
+/** 列宽的落盘形态：按列名索引（增删列都对老数据安全） */
+type StoredWidths = Partial<Record<ColumnKey, number>>;
+
+/** 存储对象 → 宽度数组：缺失 / 非法项取该列默认值，超出当前列定义的键自动忽略 */
+function widthsFromStored(obj: StoredWidths): number[] {
+  return defaultWidths().map((d, i) => {
+    const v = obj[COLUMNS[i].key];
+    return typeof v === 'number' ? clampWidth(i, v) : d;
+  });
+}
+
+/** 宽度数组 → 存储对象 */
+function storedFromWidths(widths: number[]): StoredWidths {
+  const out: StoredWidths = {};
+  COLUMNS.forEach((c, i) => {
+    if (typeof widths[i] === 'number') out[c.key] = clampWidth(i, widths[i]);
+  });
+  return out;
+}
+
+/**
+ * 解析历史（v1 / v2）按下标存储的数组。
+ * 按 LEGACY_LAYOUT 还原成「列名 → 宽度」，再交给 widthsFromStored，
+ * 这样新增的顾问人列会取默认值，而不是被旧的操作列宽度顶替。
+ */
+function widthsFromLegacyArray(raw: string): number[] {
   const arr = JSON.parse(raw) as unknown;
-  if (!Array.isArray(arr) || arr.length !== COLUMNS.length) return def;
-  return def.map((d, i) => (typeof arr[i] === 'number' ? clampWidth(i, arr[i] as number) : d));
+  if (!Array.isArray(arr)) return defaultWidths();
+  const obj: StoredWidths = {};
+  LEGACY_LAYOUT.forEach((key, i) => {
+    if (typeof arr[i] === 'number') obj[key] = arr[i] as number;
+  });
+  return widthsFromStored(obj);
 }
 
 /**
  * 读取某个计划的列宽。
  *
- * 降级链：本计划键 → v1 全局键（迁移，只读不写）→ 默认值。
+ * 降级链：v3 本计划键 → v2 本计划键（迁移，只读不写）→ v1 全局键（迁移，只读不写）→ 默认值。
  * 迁移阶段刻意不写新键：用户没主动调过宽度就不落盘，避免凭空产生一堆配置。
- * 一旦用户拖动/双击自适应，saveWidths 会写到本计划专属键，此后与全局值脱钩。
+ * 一旦用户拖动/双击自适应，saveWidths 会写到 v3 专属键，此后与历史值脱钩。
  */
 export function loadWidths(planId?: string | null): number[] {
   const def = defaultWidths();
   try {
     if (typeof localStorage === 'undefined') return def;
+
     const own = localStorage.getItem(storageKeyFor(planId));
-    if (own) return parseWidths(own);
+    if (own) {
+      const parsed = JSON.parse(own) as unknown;
+      // 老数组形态（理论上不会出现在本键下，多一层保险）
+      if (Array.isArray(parsed)) return widthsFromLegacyArray(own);
+      return widthsFromStored((parsed ?? {}) as StoredWidths);
+    }
+
     if (planId) {
-      const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
-      if (legacy) return parseWidths(legacy);
+      const v2 = localStorage.getItem(`${LEGACY_V2_KEY_PREFIX}${planId}`);
+      if (v2) return widthsFromLegacyArray(v2);
+      const v1 = localStorage.getItem(LEGACY_V1_KEY);
+      if (v1) return widthsFromLegacyArray(v1);
     }
     return def;
   } catch {
@@ -119,7 +190,7 @@ export function loadWidths(planId?: string | null): number[] {
 export function saveWidths(widths: number[], planId?: string | null): void {
   try {
     if (typeof localStorage === 'undefined') return;
-    localStorage.setItem(storageKeyFor(planId), JSON.stringify(widths));
+    localStorage.setItem(storageKeyFor(planId), JSON.stringify(storedFromWidths(widths)));
   } catch {
     /* 存储不可用时静默忽略：列宽只是偏好，不值得打断用户 */
   }
@@ -204,8 +275,11 @@ function columnTexts(task: Task, key: ColumnKey, depsText: string): string[] {
       return [task.input.duration ?? ''];
     case 'deps':
       return [depsText];
+    // 人员列：多人按顿号拼接后参与测量（与单元格展示文本一致）
     case 'owner':
-      return [task.owner ?? ''];
+      return [formatPeople(task.owner)];
+    case 'consultant':
+      return [formatPeople(task.consultant)];
     default:
       return [];
   }

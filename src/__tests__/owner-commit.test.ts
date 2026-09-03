@@ -9,7 +9,8 @@ import { useStore } from '../store';
 
 function makePlan(): Plan {
   const t = createEmptyTask('T-0001', 1, null, '任务A');
-  t.owner = '';
+  t.owner = [];
+  t.consultant = [];
   return normalizePlan({
     schemaVersion: SCHEMA_VERSION,
     planId: 'p-owner',
@@ -24,7 +25,7 @@ function makePlan(): Plan {
   });
 }
 
-describe('P0-A 负责人提交不丢数据', () => {
+describe('P0-A 人员字段（负责人/顾问人）提交不丢数据', () => {
   beforeEach(() => {
     useStore.setState({
       session: { user: 'User01', mode: 'EDITING', lockToken: null },
@@ -37,18 +38,41 @@ describe('P0-A 负责人提交不丢数据', () => {
     });
   });
 
-  it('updateCell(owner) 不抛错且写入 owner，recompute 产出 sched', () => {
+  it('updatePeople(owner) 不抛错且写入 owner，recompute 产出 sched', () => {
     useStore.setState({ plan: makePlan() });
-    expect(() => useStore.getState().updateCell('T-0001', 'owner', 'User01')).not.toThrow();
-    expect(useStore.getState().plan!.tasks[0].owner).toBe('User01');
+    expect(() => useStore.getState().updatePeople('T-0001', 'owner', ['User01'])).not.toThrow();
+    expect(useStore.getState().plan!.tasks[0].owner).toEqual(['User01']);
     expect(useStore.getState().sched).toBeTruthy();
     expect(useStore.getState().dirty).toBe(true);
   });
 
-  it('空 owner 也安全（清空负责人）', () => {
+  it('多人一次写入、顺序保持', () => {
     useStore.setState({ plan: makePlan() });
-    useStore.getState().updateCell('T-0001', 'owner', 'User01');
-    expect(() => useStore.getState().updateCell('T-0001', 'owner', '')).not.toThrow();
-    expect(useStore.getState().plan!.tasks[0].owner).toBe('');
+    useStore.getState().updatePeople('T-0001', 'owner', ['User01', 'User13', 'User02']);
+    expect(useStore.getState().plan!.tasks[0].owner).toEqual(['User01', 'User13', 'User02']);
+  });
+
+  it('空数组也安全（清空负责人）', () => {
+    useStore.setState({ plan: makePlan() });
+    useStore.getState().updatePeople('T-0001', 'owner', ['User01']);
+    expect(() => useStore.getState().updatePeople('T-0001', 'owner', [])).not.toThrow();
+    expect(useStore.getState().plan!.tasks[0].owner).toEqual([]);
+  });
+
+  it('顾问人与负责人互不影响', () => {
+    useStore.setState({ plan: makePlan() });
+    useStore.getState().updatePeople('T-0001', 'owner', ['User01']);
+    useStore.getState().updatePeople('T-0001', 'consultant', ['User13', 'User02']);
+    const t = useStore.getState().plan!.tasks[0];
+    expect(t.owner).toEqual(['User01']);
+    expect(t.consultant).toEqual(['User13', 'User02']);
+  });
+
+  it('历史字符串 owner 经 normalizePlan 迁移为数组', () => {
+    const raw = makePlan();
+    (raw.tasks[0] as unknown as { owner: unknown }).owner = 'User01,User13';
+    const migrated = normalizePlan(raw);
+    expect(migrated.tasks[0].owner).toEqual(['User01', 'User13']);
+    expect(migrated.tasks[0].consultant).toEqual([]);
   });
 });

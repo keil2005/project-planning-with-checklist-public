@@ -332,3 +332,85 @@ Error: Hook timed out in 10000ms.
 ```
 
 **推论**：这条对「改 N 个文件、每个文件改 M 处」的场景尤其致命——**文件之间并行是安全的，同一文件内并行不安全**。所以批量改文档时，按「每个文件一次写入」组织，而不是按「每处改动一个调用」组织。
+
+### 7.13 改了 `shared/` 必须重打服务端 bundle —— 只 `vite build` 会造成「静默丢字段」
+
+**现象**：U02 把 `Task.owner` 升级为 `string[]`、新增 `consultant`，前端 `vite build` 后 UI 一切正常（人员显示 `User01、User13`），点保存也成功生成新版本，但**重载后人员全是空**。`tsc --noEmit` 0 错误，**312 个单测全绿**。
+
+**根因**：本机跑的服务是预打包产物 `server-build/server.cjs`（esbuild 从 `server/index.ts` 打的 CJS 单文件，见 `build-server-bundle.sh`），它**内联了 `shared/` 的旧副本**。旧 `normalizePlan()` 里是：
+
+```ts
+...(typeof t.owner === 'string' ? { owner: t.owner } : {}),   // 数组 → 整段丢弃
+```
+
+于是服务端收到数组型 owner 时**静默删掉**（既没存 owner 也没存 consultant），且**不报任何错**。落盘 v2 的任务对象里根本没有 `owner` / `consultant` 键。
+
+**为什么测试没发现**：vitest 直接跑 TS 源码，用的是新 `shared/`；运行的却是 bundle 里的旧副本。**两套代码，测试绿不代表线上对。**
+
+**正确做法**：改了 `shared/`（或 `server/`）下任何文件后，发布前必须：
+
+```bash
+npx vite build && ./build-server-bundle.sh
+pkill -f "server-build/server.cjs"; ./start-mac.sh
+```
+
+**定位技巧**：怀疑落盘不对就直接看磁盘，别只看 UI ——
+
+```bash
+python3 -c "import json;h=json.load(open('data/plans/<id>/history.json'));t=h['versions'][-1]['planSnapshot']['tasks'][0];print(t.get('owner'),t.get('consultant'))"
+```
+
+**推论**：`data/plans/*/plan.json` 是实时态，`history.json` 的 `versions[].planSnapshot` 才是各版本快照；「UI 看到的值」与「落盘的值」可能不是一回事，凡涉及数据模型的改动都要**落盘回查**才算验证完成。
+
+### 7.14 MUI `useAutocomplete` 的 Escape 会 `stopPropagation()` —— 外层 React `onKeyDown` 收不到
+
+**现象**：给人员多选编辑器挂了 `onKeyDown`（`Escape → finish()`），但浏览器里按 Esc **关不掉**编辑器，只能点别处靠失焦关闭。
+
+**根因**：MUI `useAutocomplete` 的 `handleKeyDown` 在 Escape 分支里调了 `event.stopPropagation()`。React 17+ 把事件**委托在 root 容器**上，冒泡到包装 `div` 之前就已被 MUI 掐断，React 的合成事件根本不会派发到父级。
+
+**正解**：用**捕获阶段**的原生监听（父元素的捕获回调先于目标元素的 MUI 处理器执行，且 `stopPropagation()` 还能顺带屏蔽 MUI 自己的处理）：
+
+```ts
+useEffect(() => {
+  const el = wrapRef.current;
+  if (!editing || !el) return;
+  const onEsc = (e: KeyboardEvent) => {
+    if (e.key !== 'Escape') return;
+    e.preventDefault(); e.stopPropagation(); finishRef.current();
+  };
+  el.addEventListener('keydown', onEsc, true);
+  return () => el.removeEventListener('keydown', onEsc, true);
+}, [editing]);
+```
+
+要点：① 用 `finishRef.current()` 读最新回调，避免 effect 因 `onCommit` 每次渲染换引用而反复解绑重绑；② effect **必须无条件调用**（editing 为 false 时提前 return，不能条件注册 hook）。
+
+**验证方式**：补 RTL 用例（`fireEvent.keyDown(input, { key:'Escape' })` 会走捕获路径）。**务必反向验证一次**——临时注掉 `addEventListener` 再跑，确认用例真的失败（本次实测：禁用后 `expected 1 to be +0`），否则这条回归是假绿。
+
+### 7.15 `scrollIntoView` 在「元素宽于视口」时会横向猛跳
+
+**现象**：Playwright 点人员单元格总是**第一次点不中**，第二次才生效。排查发现点击瞬间容器横向滚动了 **314px**，Playwright 用「滚动前」的坐标点了下去，落到了别的元素上。
+
+**根因**：选中行的 effect 用了 `el.scrollIntoView({ block: 'nearest' })`，而 `inline` 默认为 `'nearest'`。当行元素**宽度大于面板**（表格 min-width 触发横向滚动）时，浏览器会做横向边缘对齐 → 整体横跳一截。
+
+**影响面不只是自动化**：真实用户点任意单元格也会看到表格横向乱跳 —— 横向滚动位置是用户自己选的视图（例如特意滚到右侧看负责人 / 顾问人），不该被动。新增「顾问人」列后表格更宽，该缺陷必现。
+
+**正解**：只滚纵向，用 `getBoundingClientRect` 手算增量改 `scrollTop`（并让开 sticky 表头高度），完全不碰 `scrollLeft`。
+
+**排查手法**：`document.elementFromPoint(cx, cy)` + 点击前后各打一次 `getBoundingClientRect()`，坐标突变 = 有人在中间滚了容器。
+
+### 7.16 RTL 单测文件必须手动 `cleanup()`（本仓库未开 vitest globals）
+
+**现象**：新写的 `src/__tests__/people-cell.test.tsx` 第 1 个用例通过，第 2、3 个报 `Found multiple elements with the title: 点击设置负责人`。
+
+**根因**：RTL 的自动 `cleanup` 依赖 `afterEach` 全局注入，只有开启 vitest `globals: true`（或显式注册）才生效。本仓库没开，所以上一个用例的表格**残留在 document 里**，下一个用例 `getByTitle` 命中多份。
+
+**正解**：
+
+```ts
+import { afterEach } from 'vitest';
+import { cleanup } from '@testing-library/react';
+afterEach(() => { cleanup(); });
+```
+
+**推论**：既有单文件单用例的测试（如 `owner-crash.test.tsx`）不会暴露这个问题；一写多用例就会踩。新写组件测试时**默认加上 cleanup**。

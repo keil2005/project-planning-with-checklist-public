@@ -256,7 +256,9 @@ export function toPlan(result: MppImportResult): { name: string; tasks: Task[] }
     const parentUid = resolveParentUid(t);
     const parentId = parentUid ? ourIdOf.get(parentUid) ?? null : null;
 
-    const owner = typeof t.owner === 'string' && t.owner.trim() !== '' ? t.owner.trim() : '';
+    // MPP 里一个任务通常只有一个资源名；升级为数组后统一包成单人数组
+    // （若 MPP 里就是 "A,B" 这种写法，normalizePeople 在 normalizePlan 阶段会再拆开）
+    const owner = typeof t.owner === 'string' && t.owner.trim() !== '' ? [t.owner.trim()] : [];
     const note = typeof t.note === 'string' && t.note.trim() !== '' ? t.note.trim() : undefined;
     const progress =
       typeof t.progress === 'number' && Number.isFinite(t.progress)
@@ -271,8 +273,10 @@ export function toPlan(result: MppImportResult): { name: string; tasks: Task[] }
       input: { start, end, duration: null },
       deps,
       collapsed: false,
+      // 人员字段恒为数组（normalizePlan 会再归一化一次）
+      owner,
+      consultant: [],
     };
-    if (owner) task.owner = owner;
     if (note) task.note = note;
     if (progress !== undefined) task.progress = progress;
     return task;
