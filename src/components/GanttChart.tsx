@@ -15,6 +15,7 @@
 
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type MutableRefObject } from 'react';
 import { useStore, useVisibleTasks } from '../store';
+import { FilterStatusBar } from './FilterBar';
 import { formatDepLabel } from '../../shared/scheduler';
 import { formatPeople } from '../../shared/people';
 import { addDays, diffDays, formatDuration, formatISODate, parseISODate, todayISO } from '../../shared/datetime';
@@ -301,7 +302,15 @@ export default function GanttChart({ scrollRef, onScroll }: GanttChartProps): JS
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [plan?.planId, sched?.projectStart]);
 
-  if (!plan || !sched) return <div className="pg-scroll" />;
+  // 未就绪时也要渲染等高筛选条：与左侧表格容器保持同高（K16 滚动同步）
+  if (!plan || !sched) {
+    return (
+      <div className="flex h-full flex-col overflow-hidden bg-white">
+        <div className="pg-filter-bar" />
+        <div className="pg-scroll" />
+      </div>
+    );
+  }
 
   /* ---- 依赖箭头 ---- */
   const links: JSX.Element[] = [];
@@ -358,6 +367,8 @@ export default function GanttChart({ scrollRef, onScroll }: GanttChartProps): JS
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-white">
+      {/* 与左侧表格的筛选条等高：两侧可视高度必须一致，否则滚到底时 scrollTop 同步会错位 */}
+      <FilterStatusBar />
       <div
         ref={scrollRef}
         className="pg-scroll"
@@ -613,8 +624,9 @@ export default function GanttChart({ scrollRef, onScroll }: GanttChartProps): JS
         </div>
       </div>
 
-      {/* 图例 */}
-      <div className="flex items-center gap-3 border-t border-slate-200 bg-slate-50 px-3 py-1 text-[11px] text-slate-500">
+      {/* 图例。⚠️ 与左侧表格底部条共用 .pg-panel-footer：两侧必须等高，
+          否则滚动容器 clientHeight 不同，滚到底时 scrollTop 同步会被 clamp（K16） */}
+      <div className="pg-panel-footer">
         <span className="inline-flex items-center gap-1">
           <span style={{ width: 14, height: 8, background: COLOR.bar, display: 'inline-block', borderRadius: 2 }} />
           任务

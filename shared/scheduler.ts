@@ -269,7 +269,13 @@ export function computeDepthMap(tasks: Task[]): Map<string, number> {
 }
 
 /** 折叠过滤：隐藏所有「祖先被折叠」的任务（表格与甘特共用，保证行号一致） */
-export function computeVisibleTasks(tasks: Task[]): Task[] {
+/**
+ * 折叠过滤后的可见任务（表格与甘特共用，保证行对齐 K16）。
+ *
+ * @param keep 额外保留白名单（列筛选结果，含命中行的祖先链）；null / undefined 表示不做筛选。
+ *             折叠与筛选取**交集**：被折叠隐藏的行即使命中筛选也不显示（折叠是用户显式意图，优先）。
+ */
+export function computeVisibleTasks(tasks: Task[], keep?: ReadonlySet<string> | null): Task[] {
   const byId = buildTaskIndex(tasks);
   const hidden = new Set<string>();
   for (const t of tasks) {
@@ -279,7 +285,7 @@ export function computeVisibleTasks(tasks: Task[]): Task[] {
     if (!parent) continue;
     if (hidden.has(p) || parent.collapsed === true) hidden.add(t.id);
   }
-  return tasks.filter((t) => !hidden.has(t.id));
+  return tasks.filter((t) => !hidden.has(t.id) && (keep == null || keep.has(t.id)));
 }
 
 export function hasChildren(tasks: Task[], taskId: string): boolean {

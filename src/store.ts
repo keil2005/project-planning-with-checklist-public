@@ -8,6 +8,7 @@
  *   - 心跳/轮询间隔来自服务端 /api/health 的 lock 配置（K11）。
  */
 
+import { useMemo } from 'react';
 import { create } from 'zustand';
 import { ApiError, api, releaseLockBeacon } from './api';
 import { buildWorkCalendar } from '../shared/calendar-build';
@@ -38,12 +39,15 @@ import {
   type PlanMeta,
   type ScheduleResult,
   type Task,
+  type TaskComputed,
   type TaskField,
   type VersionMeta,
   type WorkCalendar,
   type ZoomLevel,
 } from '../shared/types';
 import { collectPeople, normalizePeople, type PeopleField } from '../shared/people';
+import type { ColumnKey } from './columns';
+import { computeKeepIds, EMPTY_FILTER, collectColumnValues, type ColumnFilter, type FilterContext, type FilterState } from './filter';
 
 /* ============================ 类型 ============================ */
 
@@ -118,6 +122,11 @@ export interface StoreState {
   selectedTaskId: string | null;
   todayTick: number;
   dialogs: Record<DialogName, boolean>;
+  /**
+   * 列筛选 + 「Assign to me」。
+   * 纯视图态：不入 plan、不参与协同、不进版本；切计划 / 预览 / 回滚时重置（用户裁定「不记忆」）。
+   */
+  filter: FilterState;
 
   /* ---------------- 动作 ---------------- */
   init: () => Promise<void>;
@@ -169,6 +178,10 @@ export interface StoreState {
   setZoom: (zoom: ZoomLevel) => void;
   selectTask: (taskId: string | null) => void;
   jumpToday: () => void;
+  /* 筛选（视图态，见 FilterState 注释） */
+  setColumnFilter: (key: ColumnKey, f: ColumnFilter | null) => void;
+  setOnlyMine: (v: boolean) => void;
+  clearAllFilters: () => void;
   openDialog: (name: DialogName) => void;
   closeDialog: (name: DialogName) => void;
   showToast: (message: string, severity?: ToastMsg['severity']) => void;
@@ -311,6 +324,7 @@ export const useStore = create<StoreState>((set, get) => {
     selectedTaskId: null,
     todayTick: 0,
     dialogs: { user: false, planPicker: false, save: false, history: false, calendar: false },
+    filter: EMPTY_FILTER,
 
     /* 工作日历（T04：全局单一真源） */
     calendar: null,
@@ -383,6 +397,8 @@ export const useStore = create<StoreState>((set, get) => {
           parseDiag: {},
           saveDiagnostics: [],
           selectedTaskId: null,
+          // 筛选是纯视图态、按用户裁定「不记忆」：切计划即重置，避免打开后一片空白
+          filter: EMPTY_FILTER,
           session: { ...get().session, mode: 'READONLY', lockToken: null },
           dialogs: { ...get().dialogs, planPicker: false },
         });
@@ -859,6 +875,7 @@ export const useStore = create<StoreState>((set, get) => {
           preview: { version: entry.version, editor: entry.editor, notes: entry.notes },
           dirty: false,
           parseDiag: {},
+          filter: EMPTY_FILTER,
         });
         get().recompute();
       } catch (e) {
@@ -881,7 +898,7 @@ export const useStore = create<StoreState>((set, get) => {
       set({ busy: true });
       try {
         const resp = await api.restore(plan.planId, version, session.user, notes, session.lockToken);
-        set({ plan: normalizePlan(resp.plan), dirty: false, preview: null, parseDiag: {} });
+        set({ plan: normalizePlan(resp.plan), dirty: false, preview: null, parseDiag: {}, filter: EMPTY_FILTER });
         get().recompute();
         await get().loadHistory();
         get().showToast(`已回滚 v${version}，生成新版本 v${resp.version}`, 'success');
@@ -912,6 +929,22 @@ export const useStore = create<StoreState>((set, get) => {
 
     jumpToday: () => set((s) => ({ todayTick: s.todayTick + 1 })),
 
+    setColumnFilter: (key, f) =>
+      set((s) => {
+        const byColumn = { ...s.filter.byColumn };
+        // 传 null = 清除该列（delete 而不是置 undefined，避免留下空键被算作"有筛选"）
+        if (f === null) delete byColumn[key];
+        else byColumn[key] = f;
+        return { filter: { ...s.filter, byColumn } };
+      }),
+
+    setOnlyMine: (v) => {
+      if (get().filter.onlyMine === v) return;
+      set((s) => ({ filter: { ...s.filter, onlyMine: v } }));
+    },
+
+    clearAllFilters: () => set({ filter: EMPTY_FILTER }),
+
     openDialog: (name: DialogName) => set((s) => ({ dialogs: { ...s.dialogs, [name]: true } })),
 
     closeDialog: (name: DialogName) => set((s) => ({ dialogs: { ...s.dialogs, [name]: false } })),
@@ -924,6 +957,14 @@ export const useStore = create<StoreState>((set, get) => {
 
 /* ============================ 派生选择器 ============================ */
 
+/**
+ * 模块级空常量：让 useMemo 在没有 plan 时返回**稳定引用**，
+ * 避免每次渲染造新数组 / 新 Map 触发下游无谓重渲染。
+ */
+const EMPTY_TASKS: Task[] = [];
+const EMPTY_ID_SEQ: Map<string, number> = new Map<string, number>();
+const EMPTY_COMPUTED: Record<string, TaskComputed> = {};
+
 /** 当前是否可编辑（持有锁且非预览态） */
 export function useCanEdit(): boolean {
   return useStore((s) => s.session.mode === 'EDITING' && s.preview === null);
@@ -934,9 +975,61 @@ export function useHasError(): boolean {
   return useStore((s) => s.diagnostics.some((d) => d.level === 'error'));
 }
 
-/** 折叠过滤后的可见任务（表格与甘特共用，保证行对齐 K16） */
+/**
+ * 折叠 + 筛选后的可见行（表格与甘特共用，保证行对齐 K16）。
+ *
+ * ⚠️ 过滤只在**显示层**生效：排程（deps 求解）、诊断、导出、保存一律基于全量任务，
+ *    所以筛掉的行依然参与排期计算，不会因为看不见就丢依赖。
+ */
 export function useVisibleTasks(): Task[] {
-  return useStore((s) => (s.plan ? computeVisibleTasks(s.plan.tasks) : []));
+  const plan = useStore((s) => s.plan);
+  const filter = useStore((s) => s.filter);
+  const sched = useStore((s) => s.sched);
+  const me = useStore((s) => s.session.user);
+  const idToSeq = useMemo(() => (plan ? buildIdSeqMaps(plan.tasks).idToSeq : EMPTY_ID_SEQ), [plan]);
+  return useMemo(() => {
+    if (!plan) return EMPTY_TASKS;
+    const keep = computeKeepIds(plan.tasks, filter, { computed: sched?.computed ?? EMPTY_COMPUTED, idToSeq, me });
+    return computeVisibleTasks(plan.tasks, keep);
+  }, [plan, filter, sched, me, idToSeq]);
+}
+
+/**
+ * 行数统计（FilterBar 的「显示 N / 共 M」）：
+ * shown = 折叠 + 筛选后，total = 仅折叠后。两者都不含被折叠隐藏的行。
+ */
+export function useRowCounts(): { shown: number; total: number } {
+  const plan = useStore((s) => s.plan);
+  const filter = useStore((s) => s.filter);
+  const sched = useStore((s) => s.sched);
+  const me = useStore((s) => s.session.user);
+  const idToSeq = useMemo(() => (plan ? buildIdSeqMaps(plan.tasks).idToSeq : EMPTY_ID_SEQ), [plan]);
+  return useMemo(() => {
+    if (!plan) return { shown: 0, total: 0 };
+    const total = computeVisibleTasks(plan.tasks).length;
+    const keep = computeKeepIds(plan.tasks, filter, { computed: sched?.computed ?? EMPTY_COMPUTED, idToSeq, me });
+    if (!keep) return { shown: total, total };
+    return { shown: computeVisibleTasks(plan.tasks, keep).length, total };
+  }, [plan, filter, sched, me, idToSeq]);
+}
+
+/** 筛选求值上下文（菜单里的候选值列表、FilterBar 的判断都会用到） */
+export function useFilterContext(): FilterContext {
+  const plan = useStore((s) => s.plan);
+  const sched = useStore((s) => s.sched);
+  const me = useStore((s) => s.session.user);
+  const idToSeq = useMemo(() => (plan ? buildIdSeqMaps(plan.tasks).idToSeq : EMPTY_ID_SEQ), [plan]);
+  return useMemo(
+    () => ({ computed: sched?.computed ?? EMPTY_COMPUTED, idToSeq, me }),
+    [sched, idToSeq, me],
+  );
+}
+
+/** 某列的候选值（枚举型下拉用）；依赖计算只在 plan / sched 变化时重跑 */
+export function useColumnValues(key: ColumnKey): string[] {
+  const plan = useStore((s) => s.plan);
+  const ctx = useFilterContext();
+  return useMemo(() => (plan ? collectColumnValues(plan.tasks, key, ctx) : []), [plan, key, ctx]);
 }
 
 /**

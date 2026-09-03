@@ -14,6 +14,8 @@
   --cell-derived: #64748b;
   --err: #dc2626;
   --warn: #d97706;
+  /* 筛选条高度：左右两侧**必须等高**，否则 K16 的 scrollTop 同步会在滚到底时错位 */
+  --filter-bar-h: 34px;
 }
 
 html,
@@ -235,6 +237,192 @@ body.pg-resizing * {
   border-radius: 4px;
   box-shadow: 0 6px 16px rgba(15, 23, 42, 0.16);
   padding: 1px 4px 2px;
+}
+
+/* 左右面板底部状态条（左侧：模式提示；右侧：甘特图例）。
+   ★ 两侧**必须等高**：容器 clientHeight 一旦不同，两侧的最大滚动值就不同，
+     滚到底时 scrollTop 同步会被浏览器 clamp，最后一行的行对齐就破了（K16）。
+     所以这里用固定高度 + border-box，而不是由内容撑开。 */
+.pg-panel-footer {
+  height: 24px;
+  min-height: 24px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 8px;
+  border-top: 1px solid var(--grid-line);
+  background: #f8fafc;
+  font-size: 11px;
+  color: #64748b;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* 筛选（U03：表头下拉筛选 + Assign to me） */
+
+/* 顶部筛选条。左右两侧容器都要有，且等高 —— 见 FilterBar.tsx 顶部注释 */
+.pg-filter-bar {
+  height: var(--filter-bar-h);
+  min-height: var(--filter-bar-h);
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px 0 8px;
+  border-bottom: 1px solid var(--grid-line);
+  background: #fff;
+  font-size: 12px;
+  color: #475569;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.pg-filter-bar .MuiButton-root {
+  font-size: 12px;
+  padding: 1px 8px;
+  min-width: 0;
+}
+
+.pg-filter-divider {
+  margin: 0 2px !important;
+}
+
+.pg-filter-chips {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+}
+
+.pg-filter-chips .MuiChip-root {
+  height: 20px;
+  font-size: 11px;
+  max-width: 280px;
+}
+
+.pg-filter-chips--active {
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+.pg-filter-idle {
+  color: #94a3b8;
+}
+
+.pg-filter-count {
+  color: #64748b;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 表头漏斗：默认淡出，hover / 已筛选时显形 */
+.pg-th-filter {
+  margin-left: auto !important;
+  /* 让开表头右缘 7px 的列宽拖拽命中区，否则会抢走拖拽 */
+  margin-right: 9px !important;
+  padding: 1px !important;
+  width: 20px;
+  height: 20px;
+  color: #94a3b8;
+  opacity: 0.5;
+  transition:
+    opacity 0.12s ease,
+    color 0.12s ease;
+}
+
+.pg-th:hover .pg-th-filter {
+  opacity: 1;
+}
+
+.pg-th-filter:hover {
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.pg-th-filter--on {
+  opacity: 1;
+  color: #2563eb;
+}
+
+/* 下拉筛选面板 */
+.pg-filter-popover {
+  width: 252px;
+  max-width: 92vw;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pg-filter-title {
+  font-size: 12px;
+  color: #475569;
+}
+
+.pg-filter-hint {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.pg-filter-list {
+  max-height: 260px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.pg-filter-list .MuiFormControlLabel-root {
+  margin: 0;
+}
+
+.pg-filter-label {
+  font-size: 12px;
+  max-width: 176px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.pg-filter-label--blank {
+  color: #94a3b8;
+  font-style: italic;
+}
+
+.pg-filter-empty {
+  font-size: 12px;
+  color: #94a3b8;
+  padding: 6px 4px;
+}
+
+.pg-filter-toggle {
+  font-size: 11px !important;
+  padding: 2px 6px !important;
+}
+
+.pg-filter-input {
+  font-size: 12px;
+  padding: 4px 6px;
+}
+
+.pg-date-input {
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 6px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background: #fff;
+  color: #0f172a;
+}
+
+.pg-filter-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: 2px;
 }
 
 /* ============================================================
