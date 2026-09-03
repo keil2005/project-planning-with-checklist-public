@@ -4,7 +4,7 @@
 | --- | --- |
 | Language | 中文（与历史 PRD 一致） |
 | Project Name | web_gantt_planner |
-| 增量版本 | v1.2（基线：v1.1 `prd_increment_roster_assignee.md` 已交付） |
+| 增量版本 | v1.3（基线：v1.1 `prd_increment_roster_assignee.md` 已交付） |
 | 编程语言/栈 | Vite + React + MUI + Tailwind（沿用，不变） |
 | 文档性质 | **增量 PRD —— 仅描述变更部分**，未提及项一律视为保持现状 |
 
@@ -14,6 +14,7 @@
 | --- | --- | --- |
 | 2026-09-03 | 新增 **表格列宽可调**（拖动表头分隔条 + 双击按内容自适应 + localStorage 持久化） | 列定义集中在 `src/columns.ts`；拖期间只改 CSS 变量不触发 React 重渲染 |
 | 2026-09-03 | **负责人下拉浮层按最长候选自动撑开**（max-content + 200/520 上下限） | MUI `slotProps.popper.style` 覆盖默认 `width` |
+| 2026-09-03 | **列宽改为按计划独立记忆**（用户裁定） | 存储键由全局单键 `plan-gantt:column-widths:v1` 改为每计划一键 `plan-gantt:colw:v2:<planId>`；旧全局值自动迁移为新计划初值，不丢用户设置 |
 
 ---
 
@@ -47,6 +48,18 @@
 | 双击分隔条 | 按该列当前可见内容（含缩进/折叠三角/日历按钮等占位）的最长一行重算宽度 |
 | 调整完毕 | 立即写 localStorage，刷新页面后保留 |
 | 极窄可视区 | 列宽之和超过容器 → 表格 `min-width` 触发横向滚动条；任务名称列用 `minmax(W, 1fr)` 吸收剩余空间 |
+| **切换计划**（2026-09-03 新增，P0-4） | **每个计划各记一份列宽，互不影响**。打开计划时恢复到该计划上次调好的宽度；从未调过的计划回落到默认值 |
+
+#### 2.1.1 按计划独立记忆（P0-4）
+
+| 项 | 口径 |
+| --- | --- |
+| 存储键 | `plan-gantt:colw:v2:<planId>`（每计划一个键） |
+| 旧键 | `plan-gantt:column-widths:v1`（全局单键，**保留不删**） |
+| 读取降级链 | 本计划键 → v1 全局键（迁移）→ 列默认值 |
+| 迁移时机 | 打开计划时读；**只读不写**，用户没主动调过宽度就不凭空落盘 |
+| 脱钩时机 | 用户一旦拖动/双击自适应，立即写入该计划专属键，此后与 v1 全局值无关 |
+| 迁移后行为 | 各计划继承 v1 值作为初值，之后各自独立演化（见 AC-14 实测） |
 
 ### 2.2 负责人下拉宽度（P0-2）
 
@@ -75,5 +88,9 @@
 | AC-7 | 刷新页面后任意列宽保留（读 localStorage） |
 | AC-8 | 负责人列宽 90/120/327 三档下，下拉浮层宽度均为 200 px（max-content 不超 200 因为最长候选 10 字） |
 | AC-9 | 拖动期间 `body` 类加 `pg-resizing`，全局 `cursor: col-resize !important` + `user-select: none` |
-| AC-10 | 单测 `src/__tests__/columns.test.ts` 覆盖 COLUMNS/clamp/grid/CSS 变量/load+save/autoFit 降级，全部通过 |
-| AC-11 | 全部既有 252 个单测仍然通过，`tsc --noEmit` 0 错误 |
+| AC-10 | 列宽在表头、数据行、追加行三类行上**逐像素对齐**（默认列宽 / name 拖到 697px / 横向滚到最右 三种场景） |
+| AC-11 | 单测 `src/__tests__/columns.test.ts` 覆盖 COLUMNS/clamp/grid/CSS 变量/load+save/autoFit 降级与正向计算，全部通过 |
+| AC-12 | 全部既有单测仍然通过（当前 282 个），`tsc --noEmit` 0 错误 |
+| AC-13 | **按计划独立**：计划 A 拖到 457px → 切到计划 B 仍为默认 260px → B 拖到 137px → 切回 A 恢复 457px → 切回 B 恢复 137px |
+| AC-14 | **v1 迁移**：localStorage 只留旧全局键 `[52,465,...]` 时，两个计划均继承 465；把 B 改成 162 后，A 仍为 465（迁移后已脱钩） |
+| AC-15 | 迁移只读不写：仅读取 v1 值不会生成 v2 键（单测断言） |

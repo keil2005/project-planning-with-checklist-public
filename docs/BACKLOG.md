@@ -14,10 +14,14 @@
 - [x] **负责人下拉按最长候选撑开**：MUI `slotProps.popper.style` 覆盖默认 `width` 为 `max-content` + min 200 / max 520，三档列宽（90/120/327）实测下拉均为 200 px。
 - [x] **列定义集中化**：原散落在 `TaskTable.tsx` 的 `GRID_COLUMNS` / `MIN_TABLE_WIDTH` 常量外置为 `src/columns.ts` 的 `COLUMNS` 单一真源（key/label/def/min/max），未来增删列只需改一处。
 - [x] **配套单测**：`src/__tests__/columns.test.ts`（**24 用例**）覆盖 COLUMNS 结构、clamp（含 NaN/±Infinity → def）、grid/CSS 变量、load/save（结构不符逐项回落 + localStorage 抛错的降级）、autoFit 的**降级**（离屏测量 → null）与**正向计算**（装饰宽 + 最长文本 + padding，含缩进层级与 clamp）。
+- [x] **列宽改为按计划独立记忆**（用户裁定 2026-09-03）：存储键由全局单键 `plan-gantt:column-widths:v1` 改为每计划一键 `plan-gantt:colw:v2:<planId>`。降级链：本计划键 → v1 全局键（迁移）→ 默认值；**迁移只读不写**，用户没主动调过就不落盘，一旦拖动即写入该计划专属键并与此后全局值脱钩。
+  - 实测：A 拖到 457 → 切 B 仍默认 260 → B 拖到 137 → 切回 A 恢复 457 → 切回 B 恢复 137 ✓
+  - 迁移实测：只留旧全局键 `[52,465,...]` 时两计划均继承 465；B 改成 162 后 A 仍 465 ✓
+- [x] **列边界对齐复验**：默认列宽 / name 拖到 697px / 横向滚到最右（scrollLeft=631）三场景下，55 行（含追加行）× 8 列与表头**逐像素对齐**，排除「某种行类型漏用新 grid 模板」的风险。
 - [x] **autoFitWidth 兜底口径修正**：原用「行总宽 ≤ 0」判断测量失效，但 name 列的装饰宽（缩进 + 折叠三角）本身就 > 0，导致离屏环境下会把列错误地夹到 min。改为用**纯文字宽度** `textMax` 判断 → 测量不可用则保持原样不改列宽。真实浏览器行为不变（已用 Project-A 复验，数值与修正前逐一相同）。
 - [x] **文档**：`docs/prd_increment_column_widths.md`、`docs/design_increment_column_widths.md`。
 - **数据**：playwright 真实浏览器实测 31Jul + Project-A 两个计划，Project-A 双击「任务名称」260→282（最长 32 字符任务名「Internal part supplier selection」）、双击「依赖」110→210、双击「开始/结束」96→136、双击「时长」78→60（命中 min）。
-- **全量单测**：252 → **276** 全绿（14 个套件）；`tsc --noEmit` 0 错误；改后已重新 `vite build` 并重启本机服务复验。
+- **全量单测**：252 → **282** 全绿（14 个套件）；`tsc --noEmit` 0 错误；改后已重新 `vite build` 并重启本机服务复验。
 
 ## 本次已落地（2026-09-02）
 - [x] **roster 名单裁定：User14 保留**（用户裁定原文「user14要留的，且清单内放在user13后面」）。现状本就满足（索引 13，紧随 `User13` 索引 12），本次补齐的是**四处遗漏的同步**：

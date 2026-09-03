@@ -647,10 +647,23 @@ export default function TaskTable({ scrollRef, onScroll }: TaskTableProps): JSX.
 
   const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
-  /* ---- 列宽：localStorage 持久化；拖表头分隔条调整，双击分隔条按内容自适应 ---- */
-  const [widths, setWidths] = useState<number[]>(loadWidths);
+  /* ---- 列宽：按计划独立持久化（键 plan-gantt:colw:v2:<planId>）；
+         拖表头分隔条调整，双击分隔条按内容自适应 ---- */
+  const planId = plan?.planId ?? null;
+  const [widths, setWidths] = useState<number[]>(() => loadWidths(planId));
   const dragRef = useRef<{ index: number; startX: number; base: number[]; current: number } | null>(null);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
+
+  /**
+   * 切计划时重新加载该计划的列宽。
+   * 用 ref 记录「当前 widths 属于哪个计划」来跳过首次挂载，避免无谓的一次 setState。
+   */
+  const loadedPlanRef = useRef<string | null>(planId);
+  useEffect(() => {
+    if (loadedPlanRef.current === planId) return;
+    loadedPlanRef.current = planId;
+    setWidths(loadWidths(planId));
+  }, [planId]);
 
   /** 行/表头共用：grid 模板走 CSS 变量，min-width 也走变量，故整段可静态复用 */
   const gridStyle = useMemo<CSSProperties>(
@@ -664,8 +677,9 @@ export default function TaskTable({ scrollRef, onScroll }: TaskTableProps): JSX.
   const containerVars = useMemo(() => columnCssVars(widths), [widths]);
 
   useEffect(() => {
-    saveWidths(widths);
-  }, [widths]);
+    // widths 初值来自 loadWidths，首帧也会跑一次——幂等，重复写同值无副作用
+    saveWidths(widths, planId);
+  }, [widths, planId]);
 
   const startResize = useCallback(
     (e: ReactMouseEvent<HTMLSpanElement>, index: number): void => {
