@@ -176,7 +176,7 @@ describe('d·exporters · CSV', () => {
   });
 
   it('含表头与任务名（中文）、依赖表达式、来源', () => {
-    expect(csv).toContain('行号,任务ID,层级,任务名称(缩进),父任务ID,开始,结束,时长,依赖,负责人,顾问人,来源,备注');
+    expect(csv).toContain('行号,任务ID,层级,任务名称(缩进),父任务ID,开始,结束,时长,依赖,负责人,顾问人,TODO 进度,来源,备注');
     expect(csv).toContain('前置');
     expect(csv).toContain('1FS'); // 依赖表达式
     expect(csv).toContain('DEP'); // 来源列
@@ -185,5 +185,53 @@ describe('d·exporters · CSV', () => {
   it('文件名 {name}-v{version}.xml/csv', () => {
     expect(exportFileName(plan, 'mspdi')).toBe('导出测试计划-v3.xml');
     expect(exportFileName(plan, 'csv')).toBe('导出测试计划-v3.csv');
+  });
+});
+
+describe('d·exporters · TODO 交付清单导出', () => {
+  const todoTask = () =>
+    task('T-0001', '交付任务', {
+      input: { start: '2026-08-26', end: null, duration: '5d' },
+      owner: ['User01'],
+      todos: [
+        { id: 'td1', text: '出原理图', done: true, order: 0 },
+        { id: 'td2', text: '出BOM', done: false, order: 1, assignee: '张三' },
+        { id: 'td3', text: '过安规', done: false, order: 2 },
+      ],
+    });
+
+  it('MSPDI Notes 含 TODO 摘要（x/y + [x]/[ ] + assignee）；assignee 经一致性规则并入负责人成为 Resource', () => {
+    const plan = makePlan([todoTask()]);
+    const xml = toMsProjectXml(plan, schedule(plan, { calendar: WEEKEND_ONLY }), WEEKEND_ONLY);
+    expect(xml).toContain('TODO（1/3）：');
+    expect(xml).toContain('[x] 出原理图');
+    expect(xml).toContain('[ ] 出BOM（张三）');
+    expect(xml).toContain('[ ] 过安规');
+    // todo.assignee「张三」被 normalizePlan 单向并入 owner → 作为资源导出（负责人口径一致）；
+    // 这是预期行为：assignee 经一致性不变量成为负责人，而非 todo 直接生成资源。
+    const resources = [...xml.matchAll(/<Resources>[\s\S]*?<\/Resources>/g)].map((m) => m[0]).join('');
+    expect(resources).toContain('<Name>User01</Name>');
+    expect(resources).toContain('<Name>张三</Name>');
+  });
+
+  it('无 todo 时 Notes 不含 TODO 摘要', () => {
+    const plan = makePlan([task('T-0001', '无todo', { input: { start: '2026-08-26', end: null, duration: '5d' } })]);
+    const xml = toMsProjectXml(plan, schedule(plan, { calendar: WEEKEND_ONLY }), WEEKEND_ONLY);
+    expect(xml).not.toContain('TODO（');
+  });
+
+  it('CSV 含「TODO 进度」列：有项显示 x/y，无项留空', () => {
+    const plan = makePlan([
+      todoTask(),
+      task('T-0002', '无todo', { input: { start: '2026-08-31', end: null, duration: '3d' } }),
+    ]);
+    const csv = toCsv(plan, schedule(plan, { calendar: WEEKEND_ONLY }));
+    const header = csv.replace(/^\uFEFF/, '').split('\r\n')[0];
+    expect(header).toContain('TODO 进度');
+    expect(csv).toContain('1/3');
+    // 无 todo 的任务行：TODO 进度列留空（其前后为「顾问人」空列与「来源」列）
+    const noTodoLine = csv.split('\r\n').find((l) => l.includes('无todo'));
+    expect(noTodoLine).toBeDefined();
+    expect(noTodoLine).not.toContain('1/3');
   });
 });

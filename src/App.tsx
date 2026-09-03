@@ -21,6 +21,7 @@ import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import Dialogs from './components/Dialogs';
 import GanttChart from './components/GanttChart';
 import TaskTable from './components/TaskTable';
+import TodoDrawer from './components/TodoDrawer';
 import Toolbar from './components/Toolbar';
 import ErrorBoundary from './components/ErrorBoundary';
 import { useStore } from './store';
@@ -209,6 +210,7 @@ export default function App(): JSX.Element {
       </div>
 
       <Dialogs />
+      <TodoDrawer />
 
       <Snackbar
         open={toast !== null}

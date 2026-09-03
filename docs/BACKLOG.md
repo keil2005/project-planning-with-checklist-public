@@ -2,6 +2,18 @@
 
 > 待办/延迟项清单。优先级：P0 最高。标注「本次已落地」的为已完成项，供追溯。
 
+## 本次已落地（2026-09-03 · U04 todo 交付清单 + 多人并发 + 三项体验改进）
+- [x] **todo 交付清单（U04）**：`Task.todos: TodoItem[]`（id/text/done/order/assignee?），轻量验收清单，不进甘特/依赖/排程/资源；`normalizePlan()` 里 `sanitizeTodos` 清洗 + `enforceTodoOwnerConsistency` 把 todo.assignee 单向并入负责人（只增不自动移除）。
+- [x] **TODO 徽章列 + 右侧抽屉**：`TodoDrawer`（勾选/编辑/改 assignee/删 + 底部回车添加），`TaskTable` 四态徽章（0 项灰 `—` / 0/n 灰 / 部分琥珀 / x=y 绿），导出层 MSPDI Notes + CSV 加 todo 摘要/进度。
+- [x] **多人并发编辑 todo（方案 B，用户裁定「只开放 todo 并发」）**：todo 拆为独立子资源（`todos.json` + 单调 `revision`），指令式写 `POST /plans/:planId/tasks/:taskId/todos`（仅校验身份、不校验排他锁），`add/update/delete/move` 走纯函数 `applyTodoOp`；读/存/回滚路径用最新 todos 合并，防旧快照覆盖并发修改；前端 todo 动作走 `api.todoOp` + 独立轮询（`revision > 本地` 即拉取），**不置脏、不 recompute**。
+- [x] **todo 顺序可上下移动**：`moveTodo(taskId, todoId, direction)` + 抽屉每行「上移/下移」按钮（首/末行禁用）。
+- [x] **todo 文本自动换行**：`TodoRow` 文本由 `<input>` 改为 `<textarea>`（`white-space: pre-wrap; word-break: break-word; resize:none; overflow:hidden` + 自动撑高），长文本完整显示。
+- [x] **抽屉宽度翻倍**：`.pg-todo-drawer` 360px → **720px**。
+- [x] **脱离编辑锁**：抽屉增删改移用 `useCanEditTodo()`（登录且非预览即可），主计划仍受 `useCanEdit()` 排他锁约束。
+- **质量门禁**：`tsc --noEmit` 0 错误；全量单测 **20 套件 368 passed / 0 failed**（新增 `shared/__tests__/todo.test.ts` 17 例、`server/__tests__/todos.test.ts` 6 例、`src/__tests__/store.test.ts` todo 动作 5 例改造为 mock `api.todoOp`）；`vite build` + `build-server-bundle.sh` 均通过。
+- **真实浏览器验收**（Chromium 双上下文 User01/User13，7/8 全过，1 项为脚本时序误判后单独复核通过）：抽屉宽 `720px`；文本为 `<textarea>`（`white-space:pre-wrap`）；下移/上移顺序正确；B 打开计划即见 A 的 todo（服务端合并）；A 轮询到 B 新增（客户端轮询）；**0 console/page error**。
+- **文档**：`docs/LESSON_LEARN.md` §7.19（独立子资源 + 指令式写 + revision 轮询的并发设计）。
+
 ## 本次已落地（2026-09-03 · U03 表格筛选 + Assign to me）
 - [x] **表头下拉筛选（Excel 风格）**：除「行号」「操作」外 7 列表头带漏斗；点开为列专属菜单 —— 枚举列（负责人/顾问人/依赖/时长）值勾选 + 搜索 + 全选 + `(空白)` 项；任务名称列 文本条件（包含/不包含/开头是/等于）；开始/结束列 日期条件（早于/不早于/晚于/不晚于/介于）。勾选/输入**即时生效**，多列之间 AND。
 - [x] **Assign to me**：工具条切换按钮，激活后只保留「负责人或顾问人里含登录人」的行（大小写不敏感，任一命中即算），再点取消恢复。

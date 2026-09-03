@@ -137,6 +137,11 @@ export function historyFile(planId: string): string {
   return path.join(planDir(planId), 'history.json');
 }
 
+/** todo 独立资源（方案 B：多人并发编辑 todo，脱离计划级排他锁） */
+export function todosFile(planId: string): string {
+  return path.join(planDir(planId), 'todos.json');
+}
+
 /** 全局工作日历当前配置（DATA_DIR 根，不进 plan schema） */
 export function calendarFile(): string {
   return path.join(config.dataDir, 'calendar.json');

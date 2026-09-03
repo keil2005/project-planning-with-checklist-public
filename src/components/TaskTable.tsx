@@ -60,6 +60,7 @@ import {
 } from '../../shared/scheduler';
 import { formatDuration, isValidISODate } from '../../shared/datetime';
 import { formatPeople, normalizePeople } from '../../shared/people';
+import { todosProgress } from '../../shared/todo';
 import {
   DERIVE_SOURCE_LABEL,
   ErrCode,
@@ -445,6 +446,37 @@ function PeopleCell(props: PeopleCellProps): JSX.Element {
   );
 }
 
+/* ============================ TODO 徽章 ============================ */
+
+/**
+ * TODO 列徽章：收起态只显示 x/y（done/总数），点击打开右侧抽屉（第二维明细表格）。
+ * 视觉语义：0 项 → 灰「—」；0/n → 灰；部分完成 → 琥珀；全完成 → 绿。
+ */
+function TodoBadge({ task }: { task: Task }): JSX.Element {
+  const openTodoDrawer = useStore((s) => s.openTodoDrawer);
+  const { done, total } = todosProgress(task.todos);
+
+  let tone = 'empty';
+  if (total > 0) {
+    if (done === total) tone = 'done';
+    else if (done > 0) tone = 'partial';
+    else tone = 'none';
+  }
+  const label = total === 0 ? '—' : `${done}/${total}`;
+
+  return (
+    <button
+      type="button"
+      className={`pg-todo-badge pg-todo-badge--${tone}`}
+      title={total === 0 ? '暂无 TODO，点击添加' : `TODO ${done}/${total}，点击查看 / 编辑`}
+      aria-label={total === 0 ? '暂无 TODO，点击添加' : `TODO ${done}/${total}，点击查看或编辑`}
+      onClick={() => openTodoDrawer(task.id)}
+    >
+      {label}
+    </button>
+  );
+}
+
 /* ============================ 行 ============================ */
 
 interface RowProps {
@@ -686,6 +718,11 @@ function TaskRow(props: RowProps): JSX.Element {
           onEditingChange={setConsultantEditing}
           onCommit={(names) => updatePeople(task.id, 'consultant', names)}
         />
+      </div>
+
+      {/* TODO 交付清单徽章（x/y） */}
+      <div className="pg-cell pg-cell--todo justify-center">
+        <TodoBadge task={task} />
       </div>
 
       {/* 行操作 */}
@@ -980,6 +1017,8 @@ export default function TaskTable({ scrollRef, onScroll }: TaskTableProps): JSX.
               新增一行
             </button>
           </div>
+          <div className="pg-cell" />
+          <div className="pg-cell" />
           <div className="pg-cell" />
           <div className="pg-cell" />
           <div className="pg-cell" />

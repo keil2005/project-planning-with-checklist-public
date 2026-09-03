@@ -12,6 +12,7 @@
 import type { CSSProperties } from 'react';
 import type { Task } from '../shared/types';
 import { formatPeople } from '../shared/people';
+import { todosProgressText } from '../shared/todo';
 
 /* ============================ 类型 ============================ */
 
@@ -24,6 +25,7 @@ export type ColumnKey =
   | 'deps'
   | 'owner'
   | 'consultant'
+  | 'todo'
   | 'actions';
 
 export interface ColumnDef {
@@ -50,6 +52,7 @@ export const COLUMNS: ColumnDef[] = [
   { key: 'deps', label: '依赖', def: 110, min: 80, max: 360 },
   { key: 'owner', label: '负责人', def: 120, min: 90, max: 360 },
   { key: 'consultant', label: '顾问人', def: 120, min: 90, max: 360 },
+  { key: 'todo', label: 'TODO', def: 72, min: 48, max: 160 },
   { key: 'actions', label: '操作', def: 136, min: 110, max: 260 },
 ];
 
@@ -280,6 +283,8 @@ function columnTexts(task: Task, key: ColumnKey, depsText: string): string[] {
       return [formatPeople(task.owner)];
     case 'consultant':
       return [formatPeople(task.consultant)];
+    case 'todo':
+      return [todosProgressText(task.todos) || '0/0'];
     default:
       return [];
   }

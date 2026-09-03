@@ -97,6 +97,7 @@ const FILTER_KIND: Record<ColumnKey, ColumnFilterKind | null> = {
   deps: 'enum',
   owner: 'enum',
   consultant: 'enum',
+  todo: null,
   actions: null,
 };
 

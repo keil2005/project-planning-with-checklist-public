@@ -41,6 +41,9 @@ import {
   type Task,
   type TaskComputed,
   type TaskField,
+  type TodoItem,
+  type TodoOp,
+  type TodosFile,
   type VersionMeta,
   type WorkCalendar,
   type ZoomLevel,
@@ -127,6 +130,16 @@ export interface StoreState {
    * 纯视图态：不入 plan、不参与协同、不进版本；切计划 / 预览 / 回滚时重置（用户裁定「不记忆」）。
    */
   filter: FilterState;
+  /**
+   * todo 抽屉：当前打开哪个任务的第二维明细表格（null = 关闭）。
+   * 纯视图态（不入 plan、不参与协同）；切计划 / 预览 / 回滚时关闭。
+   */
+  todoDrawerTaskId: string | null;
+  /**
+   * todo 独立资源的本地已知 revision（方案 B 轮询用）。
+   * 轮询到服务端 revision > 本地值时，说明有他人并发修改，拉取合并。
+   */
+  todosRevision: number;
 
   /* ---------------- 动作 ---------------- */
   init: () => Promise<void>;
@@ -182,6 +195,13 @@ export interface StoreState {
   setColumnFilter: (key: ColumnKey, f: ColumnFilter | null) => void;
   setOnlyMine: (v: boolean) => void;
   clearAllFilters: () => void;
+  /* todo 交付清单（独立资源：走 api.todoOp 异步即时提交；assignee 一致性由 normalizePlan 兜底） */
+  addTodo: (taskId: string, text: string) => Promise<void>;
+  updateTodo: (taskId: string, todoId: string, patch: Partial<Pick<TodoItem, 'text' | 'done' | 'assignee'>>) => Promise<void>;
+  deleteTodo: (taskId: string, todoId: string) => Promise<void>;
+  moveTodo: (taskId: string, todoId: string, direction: -1 | 1) => Promise<void>;
+  openTodoDrawer: (taskId: string) => void;
+  closeTodoDrawer: () => void;
   openDialog: (name: DialogName) => void;
   closeDialog: (name: DialogName) => void;
   showToast: (message: string, severity?: ToastMsg['severity']) => void;
@@ -192,6 +212,8 @@ export interface StoreState {
 
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
+/** todo 独立资源轮询（方案 B）：独立于排他锁轮询，编辑/只读态都跑，判断他人并发修改 */
+let todoPollTimer: ReturnType<typeof setInterval> | null = null;
 let initialized = false;
 let lastPolledHolder: string | null = null;
 
@@ -228,6 +250,35 @@ export const useStore = create<StoreState>((set, get) => {
     const next = normalizePlan(draft);
     set({ plan: next, dirty: true });
     get().recompute();
+  };
+
+  /**
+   * 方案 B（todo 独立并发）：把服务端返回的单任务最新清单合并回 plan。
+   * 关键点：**不置 dirty**（todo 不走 plan.json 保存，是独立真源）、**不 recompute**
+   * （todo 与 owner 均不参与排程，见 K20）；normalizePlan 负责把 assignee 单向并入 owner。
+   * revision 只增不减：响应 revision 小于本地已知值说明已被更新的轮询结果覆盖，丢弃。
+   */
+  const applyTodoList = (planId: string, taskId: string, todos: TodoItem[], revision: number): void => {
+    if (get().plan?.planId !== planId) return; // 已切计划，丢弃过期响应
+    if (revision < get().todosRevision) return;
+    const plan = get().plan;
+    if (!plan) return;
+    const draft = clonePlan(plan);
+    const task = draft.tasks.find((x) => x.id === taskId);
+    if (!task) return;
+    task.todos = todos;
+    set({ plan: normalizePlan(draft), todosRevision: revision });
+  };
+
+  /** 把服务端返回的全量 todos 文件合并回 plan（初始化 / 轮询拉取用） */
+  const applyTodosFile = (planId: string, file: TodosFile): void => {
+    if (get().plan?.planId !== planId) return;
+    if (file.revision < get().todosRevision) return;
+    const plan = get().plan;
+    if (!plan) return;
+    const draft = clonePlan(plan);
+    for (const t of draft.tasks) t.todos = file.byTask[t.id] ?? [];
+    set({ plan: normalizePlan(draft), todosRevision: file.revision });
   };
 
   const stopHeartbeat = (): void => {
@@ -301,6 +352,37 @@ export const useStore = create<StoreState>((set, get) => {
     }, Math.max(2000, lockCfg.pollMs));
   };
 
+  const stopTodoPolling = (): void => {
+    if (todoPollTimer) {
+      clearInterval(todoPollTimer);
+      todoPollTimer = null;
+    }
+  };
+
+  /**
+   * todo 独立资源轮询（方案 B）：**独立于排他锁轮询**，无论编辑/只读态都运行。
+   * 轮询到服务端 revision > 本地 todosRevision 即拉取合并（不置脏、不 recompute），
+   * 实现多人并发编辑 todo 的准实时同步。预览态跳过（历史快照里的 todo 不随 live 资源变）。
+   */
+  const startTodoPolling = (): void => {
+    stopTodoPolling();
+    const { lockCfg } = get();
+    todoPollTimer = setInterval(() => {
+      void (async () => {
+        const { plan, session, preview } = get();
+        if (!plan || !session.user || preview) return;
+        try {
+          const file = await api.getTodos(plan.planId);
+          if (file.revision > get().todosRevision) {
+            applyTodosFile(plan.planId, file);
+          }
+        } catch {
+          /* 轮询失败静默重试 */
+        }
+      })();
+    }, Math.max(2000, lockCfg.pollMs));
+  };
+
   return {
     /* ---------------- 初始状态 ---------------- */
     users: [],
@@ -325,6 +407,8 @@ export const useStore = create<StoreState>((set, get) => {
     todayTick: 0,
     dialogs: { user: false, planPicker: false, save: false, history: false, calendar: false },
     filter: EMPTY_FILTER,
+    todoDrawerTaskId: null,
+    todosRevision: 0,
 
     /* 工作日历（T04：全局单一真源） */
     calendar: null,
@@ -399,6 +483,9 @@ export const useStore = create<StoreState>((set, get) => {
           selectedTaskId: null,
           // 筛选是纯视图态、按用户裁定「不记忆」：切计划即重置，避免打开后一片空白
           filter: EMPTY_FILTER,
+          todoDrawerTaskId: null,
+          // todo 独立资源：切计划即重置本地 revision，由轮询对齐到服务端真实值
+          todosRevision: 0,
           session: { ...get().session, mode: 'READONLY', lockToken: null },
           dialogs: { ...get().dialogs, planPicker: false },
         });
@@ -410,6 +497,7 @@ export const useStore = create<StoreState>((set, get) => {
           /* 忽略 */
         }
         startPolling();
+        startTodoPolling();
       } catch (e) {
         get().showToast(`打开计划失败：${errMessage(e)}`, 'error');
       } finally {
@@ -617,6 +705,7 @@ export const useStore = create<StoreState>((set, get) => {
         // 显式补人员字段默认，避免 undefined（createEmptyTask 不动，守「排程引擎不动」红线）
         task.owner = [];
         task.consultant = [];
+        task.todos = [];
         if (after) {
           const [, to] = subtreeRange(draft.tasks, after.id);
           draft.tasks.splice(to, 0, task);
@@ -876,6 +965,7 @@ export const useStore = create<StoreState>((set, get) => {
           dirty: false,
           parseDiag: {},
           filter: EMPTY_FILTER,
+          todoDrawerTaskId: null,
         });
         get().recompute();
       } catch (e) {
@@ -898,7 +988,7 @@ export const useStore = create<StoreState>((set, get) => {
       set({ busy: true });
       try {
         const resp = await api.restore(plan.planId, version, session.user, notes, session.lockToken);
-        set({ plan: normalizePlan(resp.plan), dirty: false, preview: null, parseDiag: {}, filter: EMPTY_FILTER });
+        set({ plan: normalizePlan(resp.plan), dirty: false, preview: null, parseDiag: {}, filter: EMPTY_FILTER, todoDrawerTaskId: null });
         get().recompute();
         await get().loadHistory();
         get().showToast(`已回滚 v${version}，生成新版本 v${resp.version}`, 'success');
@@ -945,6 +1035,74 @@ export const useStore = create<StoreState>((set, get) => {
 
     clearAllFilters: () => set({ filter: EMPTY_FILTER }),
 
+    /* ---------------- todo 交付清单 ---------------- */
+
+    /**
+     * todo 走独立资源（方案 B）：直接调 api.todoOp 异步即时提交，服务端返回该任务最新清单，
+     * 合并回 plan（不置脏、不 recompute）。任何登录用户都可操作，不要求排他锁。
+     */
+    addTodo: async (taskId, text) => {
+      const t = text.trim();
+      if (t === '') return;
+      const { plan, session } = get();
+      if (!plan || !session.user) return;
+      const planId = plan.planId;
+      try {
+        const resp = await api.todoOp(planId, taskId, session.user, { op: 'add', text: t });
+        applyTodoList(planId, taskId, resp.todos, resp.revision);
+      } catch (e) {
+        get().showToast(`添加 TODO 失败：${errMessage(e)}`, 'error');
+      }
+    },
+
+    updateTodo: async (taskId, todoId, patch) => {
+      const { plan, session } = get();
+      if (!plan || !session.user) return;
+      const planId = plan.planId;
+      // 与 applyTodoOp 语义一致：空文本不更新（清空走 deleteTodo）；空 assignee 删除字段
+      const clean: TodoOp['patch'] = {};
+      if (patch.text !== undefined) {
+        const t = patch.text.trim();
+        if (t === '') return;
+        clean.text = t;
+      }
+      if (patch.done !== undefined) clean.done = patch.done;
+      if (patch.assignee !== undefined) clean.assignee = patch.assignee.trim();
+      try {
+        const resp = await api.todoOp(planId, taskId, session.user, { op: 'update', todoId, patch: clean });
+        applyTodoList(planId, taskId, resp.todos, resp.revision);
+      } catch (e) {
+        get().showToast(`更新 TODO 失败：${errMessage(e)}`, 'error');
+      }
+    },
+
+    deleteTodo: async (taskId, todoId) => {
+      const { plan, session } = get();
+      if (!plan || !session.user) return;
+      const planId = plan.planId;
+      try {
+        const resp = await api.todoOp(planId, taskId, session.user, { op: 'delete', todoId });
+        applyTodoList(planId, taskId, resp.todos, resp.revision);
+      } catch (e) {
+        get().showToast(`删除 TODO 失败：${errMessage(e)}`, 'error');
+      }
+    },
+
+    moveTodo: async (taskId, todoId, direction) => {
+      const { plan, session } = get();
+      if (!plan || !session.user) return;
+      const planId = plan.planId;
+      try {
+        const resp = await api.todoOp(planId, taskId, session.user, { op: 'move', todoId, direction });
+        applyTodoList(planId, taskId, resp.todos, resp.revision);
+      } catch (e) {
+        get().showToast(`移动 TODO 失败：${errMessage(e)}`, 'error');
+      }
+    },
+
+    openTodoDrawer: (taskId) => set({ todoDrawerTaskId: taskId }),
+    closeTodoDrawer: () => set({ todoDrawerTaskId: null }),
+
     openDialog: (name: DialogName) => set((s) => ({ dialogs: { ...s.dialogs, [name]: true } })),
 
     closeDialog: (name: DialogName) => set((s) => ({ dialogs: { ...s.dialogs, [name]: false } })),
@@ -968,6 +1126,14 @@ const EMPTY_COMPUTED: Record<string, TaskComputed> = {};
 /** 当前是否可编辑（持有锁且非预览态） */
 export function useCanEdit(): boolean {
   return useStore((s) => s.session.mode === 'EDITING' && s.preview === null);
+}
+
+/**
+ * 当前是否可编辑 todo（方案 B：todo 是独立并发资源，**不要求排他锁**）。
+ * 只要已登录且非预览态即可增删改移 todo；主计划（甘特/依赖/排程）仍受 useCanEdit 排他锁约束。
+ */
+export function useCanEditTodo(): boolean {
+  return useStore((s) => s.session.user !== null && s.preview === null);
 }
 
 /** 存在 error 级诊断 → 禁止保存（K10） */

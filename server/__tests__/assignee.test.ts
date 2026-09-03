@@ -209,7 +209,7 @@ describe('d·导出含负责人', () => {
     expect(idxOwner).toBeGreaterThan(idxDep);
     expect(idxConsultant).toBeGreaterThan(idxOwner);
     expect(idxSrc).toBeGreaterThan(idxConsultant);
-    expect(headerLine.split(',').length).toBe(13);
+    expect(headerLine.split(',').length).toBe(14);
     // 'Group A' 含空格但无逗号 → 不被拆成两列
     expect(csv).toContain('Group A');
     // 多人用顿号拼接，不用逗号（否则会撑出额外 CSV 列）

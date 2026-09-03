@@ -15,6 +15,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { dayjs, nowTimestamp, todayISO } from '../shared/datetime';
 import { makeTaskId, normalizePlan } from '../shared/scheduler';
+import { applyTodoOp, makeTodoId, sanitizeTodos } from '../shared/todo';
 import {
   DomainError,
   ErrCode,
@@ -22,10 +23,14 @@ import {
   type HistoryFile,
   type Plan,
   type PlanMeta,
+  type TodoItem,
+  type TodoOp,
+  type TodoOpResp,
+  type TodosFile,
   type VersionEntry,
   type VersionMeta,
 } from '../shared/types';
-import { config, historyFile, planDir, planFile, plansRoot, resolveAnchorDate } from './config';
+import { config, historyFile, planDir, planFile, plansRoot, resolveAnchorDate, todosFile } from './config';
 
 const HISTORY_WARN_BYTES = 5 * 1024 * 1024;
 
@@ -227,3 +232,83 @@ export class HistoryRepository {
 
 export const planRepo = new PlanRepository();
 export const historyRepo = new HistoryRepository();
+
+/* ------------------------------ TodoRepository ------------------------------ */
+
+/**
+ * todo 独立资源仓库（方案 B，2026-09-03）：todo 从 plan.json 快照拆出，单独落盘
+ * DATA_DIR/plans/<planId>/todos.json，作为唯一真源，允许多人并发编辑 todo 而不受
+ * 计划级排他锁约束。指令式写入（add/update/delete/move），每次 revision +1。
+ */
+export class TodoRepository {
+  private empty(planId: string): TodosFile {
+    return { schemaVersion: 1, planId, revision: 0, byTask: {} };
+  }
+
+  /** 读 todos.json；不存在时从 plan.json backfill（老计划无缝过渡），并落盘 */
+  public read(planId: string): TodosFile {
+    const file = todosFile(planId);
+    if (!fs.existsSync(file)) {
+      return this.backfill(planId);
+    }
+    try {
+      const obj = readJson<Partial<TodosFile>>(file);
+      const byTask = obj.byTask && typeof obj.byTask === 'object' ? (obj.byTask as Record<string, unknown>) : {};
+      const clean: Record<string, TodoItem[]> = {};
+      for (const [taskId, list] of Object.entries(byTask)) {
+        clean[taskId] = sanitizeTodos(list, taskId);
+      }
+      return {
+        schemaVersion: 1,
+        planId,
+        revision: Number(obj.revision ?? 0),
+        byTask: clean,
+      };
+    } catch (e) {
+      // 损坏的 todos.json 不阻断计划读取：回退为空并重建（todo 非排程关键数据）
+      console.warn(`[storage] todos.json 损坏，重建（planId=${planId}）：${String(e)}`);
+      return this.backfill(planId);
+    }
+  }
+
+  /** 首次访问时从 plan.json 迁移现有 todos（id 已存在于 plan 快照，直接沿用） */
+  private backfill(planId: string): TodosFile {
+    let byTask: Record<string, TodoItem[]> = {};
+    try {
+      const plan = planRepo.readPlan(planId);
+      for (const t of plan.tasks) {
+        if (t.todos && t.todos.length > 0) byTask[t.id] = t.todos;
+      }
+    } catch {
+      byTask = {};
+    }
+    const data: TodosFile = { schemaVersion: 1, planId, revision: 0, byTask };
+    this.write(planId, data);
+    return data;
+  }
+
+  private write(planId: string, data: TodosFile): void {
+    atomicWriteJson(todosFile(planId), data);
+  }
+
+  /**
+   * 对某个任务执行一条 todo 指令（原子读-改-写，revision +1），返回最新 revision 与该任务清单。
+   * 不校验锁——todo 是独立并发资源，任何登录用户都可操作（权限在 routes 层校验 user 非空）。
+   */
+  public applyOp(planId: string, taskId: string, op: TodoOp): TodoOpResp {
+    const data = this.read(planId);
+    const current = data.byTask[taskId] ?? [];
+    const next = applyTodoOp(current, op, makeTodoId);
+    data.byTask[taskId] = next;
+    data.revision += 1;
+    this.write(planId, data);
+    return { revision: data.revision, todos: next };
+  }
+
+  /** 供保存 plan 时合并：把最新 todos 覆盖回 plan.tasks[].todos（防覆盖并发修改） */
+  public snapshot(planId: string): TodosFile {
+    return this.read(planId);
+  }
+}
+
+export const todoRepo = new TodoRepository();

@@ -77,6 +77,65 @@ export interface TaskComputed {
   hasError: boolean;
 }
 
+/**
+ * 任务的细分交付清单项（U04，2026-09-03 新增）。
+ *
+ * 定位（用户裁定）：**轻量验收清单**，不是 WBS 子任务——不进甘特图、不参与依赖/排程/关键路径、
+ * 不生成 MS Project Resource/Assignment。衡量「这个任务交付时，这 N 项成果是否都做完了」。
+ *
+ * 一致性不变量（用户裁定）：todo.assignee 若既不在负责人也不在顾问人里，由 normalizePlan()
+ * 自动单向并入负责人（只增不自动移除），从而保证「Assign to me 只认负责人/顾问人」能自动覆盖
+ * 「我负责了某个 todo 项」。
+ */
+export interface TodoItem {
+  /** 任务内唯一（stable，落盘用） */
+  id: string;
+  /** 明细文本（trim 后非空才保留） */
+  text: string;
+  done: boolean;
+  /** 展示顺序（0-based，normalizePlan 重排） */
+  order: number;
+  /** 该明细的责任人（可选，单人）；被指派后若不在负责人/顾问人则自动并入负责人 */
+  assignee?: string;
+}
+
+/**
+ * todo 独立资源落盘结构（2026-09-03，方案 B「todo 独立并发」）。
+ *
+ * todo 从 plan.json 快照中拆出，作为唯一真源独立落盘（DATA_DIR/plans/<planId>/todos.json），
+ * 从而允许多人并发编辑 todo 而不受计划级排他锁约束：
+ *   - plan.json 的 tasks[].todos 降级为「最后一次保存时的快照」（可能过期）；
+ *   - 读取 / 保存 plan 时，统一以 todos.json 的 byTask 为准合并（见 routes.readPlanFresh）。
+ *   - revision 单调递增，供前端轮询判断是否有他人变更。
+ */
+export interface TodosFile {
+  schemaVersion: 1;
+  planId: string;
+  /** 单调递增；每次指令写操作 +1，前端据此判断是否需要拉取最新 */
+  revision: number;
+  /** taskId → 该任务的验收清单（数组顺序 == order） */
+  byTask: Record<string, TodoItem[]>;
+}
+
+/** todo 指令（POST /plans/:planId/tasks/:taskId/todos 的请求体，见 shared/todo.applyTodoOp） */
+export interface TodoOp {
+  op: 'add' | 'update' | 'delete' | 'move';
+  /** update / delete / move 必填 */
+  todoId?: string;
+  /** add 必填 */
+  text?: string;
+  /** update 的字段补丁（text / done / assignee） */
+  patch?: Partial<Pick<TodoItem, 'text' | 'done' | 'assignee'>>;
+  /** move 的方向：-1 上移、+1 下移 */
+  direction?: -1 | 1;
+}
+
+/** todo 指令响应：最新 revision + 该任务的最新清单 */
+export interface TodoOpResp {
+  revision: number;
+  todos: TodoItem[];
+}
+
 export interface Task {
   /** 'T-0001' 系统生成，全生命周期不变（K6） */
   id: string;
@@ -103,6 +162,8 @@ export interface Task {
   consultant?: string[];
   /** 扩展位 0-100 */
   progress?: number;
+  /** 细分交付清单（轻量验收清单，见 TodoItem）；恒为数组（可能为空），由 normalizePlan 归一化 */
+  todos?: TodoItem[];
 }
 
 export interface CalendarConfig {

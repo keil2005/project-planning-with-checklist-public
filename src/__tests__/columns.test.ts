@@ -24,18 +24,20 @@ import {
 import { createEmptyTask } from '../../shared/scheduler';
 
 describe('U01 列宽：COLUMNS 常量结构', () => {
-  it('9 列、顺序与 grid 模板一致、key 唯一', () => {
-    expect(COLUMNS.length).toBe(9);
+  it('10 列、顺序与 grid 模板一致、key 唯一', () => {
+    expect(COLUMNS.length).toBe(10);
     const keys = COLUMNS.map((c) => c.key);
-    expect(keys).toEqual(['seq', 'name', 'start', 'end', 'duration', 'deps', 'owner', 'consultant', 'actions']);
-    expect(new Set(keys).size).toBe(9);
+    expect(keys).toEqual(['seq', 'name', 'start', 'end', 'duration', 'deps', 'owner', 'consultant', 'todo', 'actions']);
+    expect(new Set(keys).size).toBe(10);
   });
 
-  it('顾问人列紧跟负责人、在操作列之前', () => {
+  it('顾问人列紧跟负责人、TODO 列紧跟顾问人、都在操作列之前', () => {
     const keys = COLUMNS.map((c) => c.key);
     expect(keys.indexOf('consultant')).toBe(keys.indexOf('owner') + 1);
-    expect(keys.indexOf('consultant')).toBe(keys.indexOf('actions') - 1);
+    expect(keys.indexOf('todo')).toBe(keys.indexOf('consultant') + 1);
+    expect(keys.indexOf('todo')).toBe(keys.indexOf('actions') - 1);
     expect(COLUMNS[keys.indexOf('consultant')].label).toBe('顾问人');
+    expect(COLUMNS[keys.indexOf('todo')].label).toBe('TODO');
   });
 
   it('每列 min ≤ def ≤ max（合法范围）', () => {
@@ -140,13 +142,13 @@ describe('U01 列宽：loadWidths / saveWidths（localStorage mock）', () => {
   });
 
   it('saveWidths 后 loadWidths 能完整还原（不丢精度）', () => {
-    const widths = [60, 300, 100, 100, 80, 120, 130, 140, 150];
+    const widths = [60, 300, 100, 100, 80, 120, 130, 140, 72, 150];
     saveWidths(widths, 'p-A');
     expect(loadWidths('p-A')).toEqual(widths);
   });
 
   it('落盘形态是按列名的对象，不是按下标的数组', () => {
-    const widths = [60, 300, 100, 100, 80, 120, 130, 140, 150];
+    const widths = [60, 300, 100, 100, 80, 120, 130, 140, 72, 150];
     saveWidths(widths, 'p-A');
     const raw = store.get('plan-gantt:colw:v3:p-A')!;
     const parsed = JSON.parse(raw) as Record<string, number>;
@@ -157,8 +159,8 @@ describe('U01 列宽：loadWidths / saveWidths（localStorage mock）', () => {
   });
 
   it('每个计划各存一份，互不干扰（键带 planId）', () => {
-    const a = [60, 300, 100, 100, 80, 120, 130, 140, 150];
-    const b = [52, 700, 96, 96, 78, 110, 120, 120, 136];
+    const a = [60, 300, 100, 100, 80, 120, 130, 140, 72, 150];
+    const b = [52, 700, 96, 96, 78, 110, 120, 120, 72, 136];
     saveWidths(a, 'p-A');
     saveWidths(b, 'p-B');
     expect(loadWidths('p-A')).toEqual(a);
@@ -169,7 +171,7 @@ describe('U01 列宽：loadWidths / saveWidths（localStorage mock）', () => {
   });
 
   it('未调过宽度的计划不受其它计划影响，回退到默认值', () => {
-    saveWidths([60, 300, 100, 100, 80, 120, 130, 140, 150], 'p-A');
+    saveWidths([60, 300, 100, 100, 80, 120, 130, 140, 72, 150], 'p-A');
     expect(loadWidths('p-C')).toEqual(defaultWidths());
   });
 
@@ -185,7 +187,8 @@ describe('U01 列宽：loadWidths / saveWidths（localStorage mock）', () => {
     expect(got[5]).toBe(101);
     expect(got[6]).toBe(120); // owner
     expect(got[7]).toBe(COLUMNS[7].def); // consultant → 默认 120（不是旧 actions 的 136）
-    expect(got[8]).toBe(136); // actions 仍是 136
+    expect(got[8]).toBe(COLUMNS[8].def); // todo → 默认 72
+    expect(got[9]).toBe(136); // actions 仍是 136
   });
 
   it('v2 本计划键迁移：同样按列名还原，且与 v1 全局值互不影响', () => {
@@ -194,7 +197,7 @@ describe('U01 列宽：loadWidths / saveWidths（localStorage mock）', () => {
     store.set('plan-gantt:column-widths:v1', JSON.stringify([52, 999, 96, 96, 78, 110, 120, 136]));
     // 本计划有 v2 键 → 优先用它，不看 v1
     expect(loadWidths('p-A')[1]).toBe(465);
-    expect(loadWidths('p-A')[8]).toBe(136);
+    expect(loadWidths('p-A')[9]).toBe(136);
     // 没有 v2 键的计划才吃 v1
     expect(loadWidths('p-B')[1]).toBe(960); // 999 超过 name 的 max=960，被 clamp
   });
@@ -248,7 +251,7 @@ describe('U01 列宽：loadWidths / saveWidths（localStorage mock）', () => {
   });
 
   it('planId 为空 / undefined 时走 v1 全局键（兼容无计划上下文的调用）', () => {
-    const w = [60, 300, 100, 100, 80, 120, 130, 140, 150];
+    const w = [60, 300, 100, 100, 80, 120, 130, 140, 72, 150];
     saveWidths(w, null);
     expect(store.has('plan-gantt:column-widths:v1')).toBe(true);
     expect(loadWidths(null)).toEqual(w);

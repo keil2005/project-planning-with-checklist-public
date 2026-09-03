@@ -14,6 +14,9 @@ import type {
   Plan,
   PlanMeta,
   SavePlanResp,
+  TodoOp,
+  TodoOpResp,
+  TodosFile,
   VersionEntry,
   VersionMeta,
 } from '../shared/types';
@@ -113,6 +116,19 @@ export const api = {
       editor,
       notes,
       lockToken,
+    });
+  },
+
+  /** todo 独立资源：拉取全量 { revision, byTask }（供初始化 / 轮询，无需锁） */
+  getTodos(planId: string): Promise<TodosFile> {
+    return request<TodosFile>(`/plans/${encodeURIComponent(planId)}/todos`);
+  },
+
+  /** todo 独立资源：指令式写（add/update/delete/move，无需排他锁，仅要求 user） */
+  todoOp(planId: string, taskId: string, user: string, op: TodoOp): Promise<TodoOpResp> {
+    return request<TodoOpResp>(`/plans/${encodeURIComponent(planId)}/tasks/${encodeURIComponent(taskId)}/todos`, 'POST', {
+      user,
+      op,
     });
   },
 

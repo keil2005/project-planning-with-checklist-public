@@ -144,12 +144,12 @@ rsync -a --delete --delete-excluded \
 - 上述模式已沉淀为 WorkBuddy 用户级技能 `windows-shared-node-launcher`（定位自带 Node + `pushd` UNC 解法 + UTF-8 BOM 必加），同名共享盘 Node 部署（如 jira-dashboard）直接复用，避免重踩。
 
 ### 6.4 一键启动入口（双击即开）
-- **做法**：在共享盘项目目录与使用者桌面各放一份 `.cmd` 包装器（本例 `plan-gantt 一键启动.cmd`），内容仅做 `pushd "\\server\share\..."` + `call start-plan-gantt.bat` + `popd`。使用者双击该 `.cmd` 即自动连共享盘并启动——真 bat 内 `%~dp0` 解析为 UNC、相对路径 `server-build\...` 正常，**无需先映射盘符**。
+- **做法**：在共享盘项目目录与使用者桌面各放一份 `.cmd` 包装器（本例 `plan-gantt 一键启动 v1.1.0.cmd`），内容仅做 `pushd "\\server\share\..."` + `call "start-plan-gantt v1.1.0.bat"` + `popd`。使用者双击该 `.cmd` 即自动连共享盘并启动——真 bat 内 `%~dp0` 解析为 UNC、相对路径 `server-build\...` 正常，**无需先映射盘符**。
 - **为什么不用 `.lnk`**：当前 WorkBuddy 沙箱安全策略拦截 `WScript.Shell` COM 实例化，无法用 PowerShell `New-Object -ComObject WScript.Shell` 生成 `.lnk`；`.cmd` 包装器零依赖、效果等价，且同样可放桌面/开始菜单/分发。需正式 `.lnk` 时，可在未被限的 Windows 上跑：
   ```powershell
   $s = New-Object -ComObject WScript.Shell
   $l = $s.CreateShortcut("plan-gantt 一键启动.lnk")
-  $l.TargetPath = '\\192.0.2.8\r&d\00 public\PM tool\plan-gantt\start-plan-gantt.bat'
+  $l.TargetPath = '\\192.0.2.8\r&d\00 public\PM tool\plan-gantt\start-plan-gantt v1.1.0.bat'
   $l.WorkingDirectory = 'C:\Users\User01.Zheng'; $l.Save()
   ```
 - **自动开浏览器**：真 bat 在启动服务前加 `start "" cmd /c "ping -n 3 127.0.0.1 >nul && start http://localhost:3001"`，服务监听后约 2 秒自动打开默认浏览器，进一步贴近「一键」。
@@ -288,7 +288,7 @@ Error: Hook timed out in 10000ms.
 - **格式检查**：`python3` 读二进制，确认 `BOM=True`、`LF-only=0`（含中文的脚本必须 UTF-8 BOM + CRLF，见 §2.z 坑 C）。
 - **改完再校验一次**：写回后重新统计 `CRLF` 与 `LF-only`，确保编辑工具没把行尾搞混（本次 312 CRLF / 0 LF-only）。
 - **粗检语法**：数花括号是否平衡、正则扫 `Write-*"…" -f ` 这类误用。
-- **收尾提示要指向对的启动器**：本项目 Windows 端迭代后有两个启动脚本，`start-plan-gantt.bat`（BOM+CRLF+`pushd`）是修正版，`start-windows.bat` 是旧版——提示语里两个都给，并以前者为主。
+- **收尾提示要指向对的启动器**：本项目 Windows 端迭代后有两个启动脚本，`start-plan-gantt v1.1.0.bat`（BOM+CRLF+`pushd`）是修正版，`start-windows.bat` 是旧版——提示语里两个都给，并以前者为主。
 
 **教训**：`$ErrorActionPreference = 'Stop'` 会让任何小的参数绑定错误变成「脚本整个崩掉」，所以这类脚本里**每个自定义函数的调用都要核对参数个数**，不能想当然套用 `-f` 之类的格式化写法。
 
@@ -435,3 +435,17 @@ afterEach(() => { cleanup(); });
 - 「祖先链回补」单独一个纯函数 `computeKeepIds`：先算匹配行，再沿 `parentId` 向上逐层加入祖先 id；折叠语义优先（被折叠隐藏的行即使命中也不显示）。
 
 **推论**：凡是「只改变显示、不该改变数据本身」的需求，优先找既有的**派生选择器**挂上去，而不是往 `plan.tasks` 上动手。
+
+### 7.19 多人并发编辑：拆「独立子资源 + 指令式写 + revision 轮询」，而非放宽排他锁
+
+**背景**：U04 之后，用户要「多人同时在线编辑 todo」。现状是**计划级排他锁**（`lockService`，一人 EDITING 全计划写操作都要 `assertHolder`），todo 也随整个 plan 一起被锁。若为 todo 放宽锁，会破坏主计划（甘特/依赖/排程）的一致性——那是错误方向。
+
+**正解（方案 B）**：
+- **todo 拆成独立子资源**：`tasks[].todos` 从 `plan.json` 快照中降级为「最后保存时的快照」，唯一真源改落 `DATA_DIR/plans/<planId>/todos.json`（`byTask` 映射 + 单调递增 `revision`）。
+- **指令式写，不校验锁**：`POST /plans/:planId/tasks/:taskId/todos` 只 `requireEditor`（身份），不 `assertHolder`。增删改移四类指令走纯函数 `applyTodoOp`（前后端 + 单测共用），每次写 `revision + 1`。
+- **读/存路径派生合并**：`readPlanFresh` 读 plan 时用最新 `todos.json` 覆盖 `tasks[].todos` 再 `normalizePlan`（assignee 单向并入 owner 在**读路径即时生效**，无需写 plan）；保存/回滚时用最新 todos 覆盖提交快照，**防旧快照覆盖他人并发修改**。
+- **前端乐观并发**：todo 动作直接 `api.todoOp` 异步提交，合并返回的最新清单，**不置 dirty、不 recompute**（todo 与 owner 都不参与排程，见 K20）；另起一路**独立于排他锁的轮询**，`revision > 本地` 即拉取合并，实现双人准实时同步。
+- **revision 只增不回退**：本地合并时 `revision < 本地值` 的过期响应直接丢弃，规避「动作响应 vs 轮询结果」的竞态。
+
+**推论**：协作需求先判断「该数据是否真的需要强一致排他锁」。todo 因「不进排程、字段极简、改动单向只增」天然可交换/幂等，才适合拆出并发；主计划仍保留一人排他锁。别一刀切放宽全局锁。
+

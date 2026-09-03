@@ -11,5 +11,5 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
-call start-plan-gantt.bat
+call "start-plan-gantt v1.1.0.bat"
 popd
