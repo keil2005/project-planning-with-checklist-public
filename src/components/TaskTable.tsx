@@ -10,7 +10,16 @@
  *   - 排程结果只读取 store.sched，绝不在组件内做日期运算（K8）。
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject, type MouseEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type MutableRefObject,
+  type MouseEvent as ReactMouseEvent,
+} from 'react';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
 import Autocomplete from '@mui/material/Autocomplete';
@@ -26,6 +35,18 @@ import FormatIndentDecreaseIcon from '@mui/icons-material/FormatIndentDecrease';
 import FormatIndentIncreaseIcon from '@mui/icons-material/FormatIndentIncrease';
 import { useCanEdit, useOwnerCandidates, useStore, useVisibleTasks } from '../store';
 import DatePickerPopover from './DatePickerPopover';
+import {
+  COLUMNS,
+  COL_VAR_NAMES,
+  GRID_TEMPLATE_VARS,
+  TABLE_MIN_W_VAR,
+  autoFitWidth,
+  clampWidth,
+  columnCssVars,
+  defaultWidths,
+  loadWidths,
+  saveWidths,
+} from '../columns';
 import {
   buildIdSeqMaps,
   computeDepthMap,
@@ -46,11 +67,11 @@ import {
 
 /* ============================ 常量 ============================ */
 
-/** 列宽（与表头、数据行共用同一 grid 模板）；负责人列（120px）插「依赖」后、「操作」前（K22） */
-const GRID_COLUMNS = '52px minmax(160px, 1fr) 96px 96px 78px 110px 120px 136px';
+/** 列宽定义、持久化与自适应测量全部在 src/columns.ts（表头与数据行共用同一套 CSS 变量） */
 
-/** 表格最小宽度，小于此宽度出现横向滚动条 */
-const MIN_TABLE_WIDTH = 850;
+/** 负责人下拉浮层宽度：名单普遍偏短，给足下限；超长候选封顶后由浮层内部截断（K22） */
+const OWNER_DROPDOWN_MIN_W = 200;
+const OWNER_DROPDOWN_MAX_W = 520;
 
 /* ============================ 工具 ============================ */
 
@@ -265,6 +286,15 @@ function OwnerAutocomplete(props: OwnerAutocompleteProps): JSX.Element {
       freeSolo
       disablePortal={false}
       forcePopupIcon={false}
+      /* MUI 默认把浮层宽度锁成「与输入框同宽」，短名单会被挤成一条缝。
+         这里用 max-content 让浮层按最长候选撑开，配 min/max 兜底两端。 */
+      slotProps={{
+        popper: {
+          placement: 'bottom-start',
+          style: { width: 'max-content', minWidth: OWNER_DROPDOWN_MIN_W, maxWidth: OWNER_DROPDOWN_MAX_W },
+        },
+        paper: { sx: { maxWidth: OWNER_DROPDOWN_MAX_W } },
+      }}
       selectOnFocus
       clearOnBlur={false}
       blurOnSelect
@@ -339,10 +369,12 @@ interface RowProps {
   diagnostics: Diagnostic[] | undefined;
   canEdit: boolean;
   selected: boolean;
+  /** 列宽由滚动容器上的 CSS 变量驱动，这里只放不随列宽变化的部分 */
+  gridStyle: CSSProperties;
 }
 
 function TaskRow(props: RowProps): JSX.Element {
-  const { task, computed, depth, isParent, collapsed, idToSeq, diagnostics, canEdit, selected } = props;
+  const { task, computed, depth, isParent, collapsed, idToSeq, diagnostics, canEdit, selected, gridStyle } = props;
 
   const updateCell = useStore((s) => s.updateCell);
   const addRow = useStore((s) => s.addRow);
@@ -359,7 +391,7 @@ function TaskRow(props: RowProps): JSX.Element {
   // 开始/结束日期的月历弹窗状态
   const [dateField, setDateField] = useState<'start' | 'end' | null>(null);
   const [dateAnchor, setDateAnchor] = useState<HTMLElement | null>(null);
-  const openDatePopover = (field: 'start' | 'end') => (e: MouseEvent<HTMLElement>): void => {
+  const openDatePopover = (field: 'start' | 'end') => (e: ReactMouseEvent<HTMLElement>): void => {
     setDateAnchor(e.currentTarget);
     setDateField(field);
   };
@@ -396,7 +428,7 @@ function TaskRow(props: RowProps): JSX.Element {
   return (
     <div
       className={`pg-row ${selected ? 'pg-row--selected' : ''} ${isParent ? 'pg-row--parent' : ''}`}
-      style={{ gridTemplateColumns: GRID_COLUMNS, minWidth: MIN_TABLE_WIDTH, height: ROW_H }}
+      style={gridStyle}
       onMouseDown={() => selectTask(task.id)}
     >
       {/* 行号（只读，等于依赖表达式里引用的编号） */}
@@ -615,6 +647,74 @@ export default function TaskTable({ scrollRef, onScroll }: TaskTableProps): JSX.
 
   const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
+  /* ---- 列宽：localStorage 持久化；拖表头分隔条调整，双击分隔条按内容自适应 ---- */
+  const [widths, setWidths] = useState<number[]>(loadWidths);
+  const dragRef = useRef<{ index: number; startX: number; base: number[]; current: number } | null>(null);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+
+  /** 行/表头共用：grid 模板走 CSS 变量，min-width 也走变量，故整段可静态复用 */
+  const gridStyle = useMemo<CSSProperties>(
+    () => ({ gridTemplateColumns: GRID_TEMPLATE_VARS, minWidth: `var(${TABLE_MIN_W_VAR})`, height: ROW_H }),
+    [],
+  );
+  const headStyle = useMemo<CSSProperties>(
+    () => ({ gridTemplateColumns: GRID_TEMPLATE_VARS, minWidth: `var(${TABLE_MIN_W_VAR})` }),
+    [],
+  );
+  const containerVars = useMemo(() => columnCssVars(widths), [widths]);
+
+  useEffect(() => {
+    saveWidths(widths);
+  }, [widths]);
+
+  const startResize = useCallback(
+    (e: ReactMouseEvent<HTMLSpanElement>, index: number): void => {
+      e.preventDefault();
+      e.stopPropagation();
+      dragRef.current = { index, startX: e.clientX, base: widths, current: widths[index] };
+      setDragIndex(index);
+    },
+    [widths],
+  );
+
+  /* 拖拽期只改容器上的 CSS 变量（不触发 React 重渲染），松手时才落库 */
+  useEffect(() => {
+    if (dragIndex === null) return;
+    const onMove = (ev: MouseEvent): void => {
+      const d = dragRef.current;
+      if (!d) return;
+      const next = clampWidth(d.index, d.base[d.index] + (ev.clientX - d.startX));
+      if (next === d.current) return;
+      d.current = next;
+      const el = scrollRef.current;
+      if (el) {
+        el.style.setProperty(COL_VAR_NAMES[d.index], `${next}px`);
+        const sum = d.base.reduce((a, b, i) => a + (i === d.index ? next : b), 0);
+        el.style.setProperty(TABLE_MIN_W_VAR, `${sum}px`);
+      }
+    };
+    const onUp = (): void => {
+      const d = dragRef.current;
+      dragRef.current = null;
+      setDragIndex(null);
+      if (!d) return;
+      setWidths((prev) => {
+        if (prev[d.index] === d.current) return prev;
+        const copy = prev.slice();
+        copy[d.index] = d.current;
+        return copy;
+      });
+    };
+    document.body.classList.add('pg-resizing');
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      document.body.classList.remove('pg-resizing');
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [dragIndex, scrollRef]);
+
   const idToSeq = useMemo(() => (plan ? buildIdSeqMaps(plan.tasks).idToSeq : new Map<string, number>()), [plan]);
   const depthMap = useMemo(() => (plan ? computeDepthMap(plan.tasks) : new Map<string, number>()), [plan]);
   const diagByTask = useMemo(() => groupDiagnosticsByTask(diagnostics), [diagnostics]);
@@ -624,6 +724,27 @@ export default function TaskTable({ scrollRef, onScroll }: TaskTableProps): JSX.
     for (const t of plan.tasks) if (t.parentId) set.add(t.parentId);
     return set;
   }, [plan]);
+
+  /** 双击分隔条：按该列最长内容重算宽度（操作列不支持，回落到默认宽度） */
+  const autoFitColumn = useCallback(
+    (index: number): void => {
+      const fitted = autoFitWidth(index, {
+        tasks: visible,
+        depthOf: (t) => sched?.computed[t.id]?.depth ?? depthMap.get(t.id) ?? 0,
+        isParentOf: (t) =>
+          sched?.computed[t.id]?.isParent ?? (parentSet.has(t.id) || hasChildren(plan?.tasks ?? [], t.id)),
+        depsTextOf: (t) => formatDepsExpr(t.deps, idToSeq),
+      });
+      const next = fitted ?? defaultWidths()[index];
+      setWidths((prev) => {
+        if (prev[index] === next) return prev;
+        const copy = prev.slice();
+        copy[index] = next;
+        return copy;
+      });
+    },
+    [visible, sched, depthMap, parentSet, plan, idToSeq],
+  );
 
   /* 选中行自动滚入可视区（诊断条点击定位用） */
   useEffect(() => {
@@ -636,20 +757,27 @@ export default function TaskTable({ scrollRef, onScroll }: TaskTableProps): JSX.
 
   return (
     <div className="flex h-full flex-col overflow-hidden border-r border-slate-200 bg-white">
-      <div ref={scrollRef} className="pg-scroll" onScroll={onScroll}>
-        {/* 表头 */}
-        <div
-          className="pg-head pg-sticky-head text-[12px]"
-          style={{ gridTemplateColumns: GRID_COLUMNS, minWidth: MIN_TABLE_WIDTH }}
-        >
-          <div className="pg-cell justify-center">行号</div>
-          <div className="pg-cell">任务名称</div>
-          <div className="pg-cell">开始</div>
-          <div className="pg-cell">结束</div>
-          <div className="pg-cell">时长</div>
-          <div className="pg-cell">依赖</div>
-          <div className="pg-cell">负责人</div>
-          <div className="pg-cell justify-end">操作</div>
+      <div ref={scrollRef} className="pg-scroll" onScroll={onScroll} style={containerVars}>
+        {/* 表头（每列右缘有分隔条，可拖拽调宽 / 双击自适应） */}
+        <div className="pg-head pg-sticky-head text-[12px]" style={headStyle}>
+          {COLUMNS.map((c, i) => (
+            <div
+              key={c.key}
+              className={`pg-cell pg-th ${c.key === 'seq' ? 'justify-center' : ''} ${
+                c.key === 'actions' ? 'justify-end' : ''
+              }`}
+            >
+              <span className="pg-th-label">{c.label}</span>
+              {i < COLUMNS.length - 1 && (
+                <span
+                  className={`pg-col-resizer ${dragIndex === i ? 'pg-col-resizer--active' : ''}`}
+                  title="拖动调整列宽；双击按内容自适应"
+                  onMouseDown={(e) => startResize(e, i)}
+                  onDoubleClick={() => autoFitColumn(i)}
+                />
+              )}
+            </div>
+          ))}
         </div>
 
         {/* 数据行 */}
@@ -671,15 +799,13 @@ export default function TaskTable({ scrollRef, onScroll }: TaskTableProps): JSX.
               diagnostics={diagByTask.get(t.id)}
               canEdit={canEdit}
               selected={selectedTaskId === t.id}
+              gridStyle={gridStyle}
             />
           </div>
         ))}
 
         {/* 追加行 */}
-        <div
-          className="pg-row"
-          style={{ gridTemplateColumns: GRID_COLUMNS, minWidth: MIN_TABLE_WIDTH, height: ROW_H }}
-        >
+        <div className="pg-row" style={gridStyle}>
           <div className="pg-cell justify-center text-slate-400">+</div>
           <div className="pg-cell">
             <button
