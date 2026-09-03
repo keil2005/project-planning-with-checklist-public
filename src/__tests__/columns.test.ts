@@ -134,29 +134,79 @@ describe('U01 列宽：loadWidths / saveWidths（localStorage mock）', () => {
 
   it('saveWidths 后 loadWidths 能完整还原（不丢精度）', () => {
     const widths = [60, 300, 100, 100, 80, 120, 130, 140];
-    saveWidths(widths);
-    expect(loadWidths()).toEqual(widths);
+    saveWidths(widths, 'p-A');
+    expect(loadWidths('p-A')).toEqual(widths);
+  });
+
+  it('每个计划各存一份，互不干扰（键带 planId）', () => {
+    const a = [60, 300, 100, 100, 80, 120, 130, 140];
+    const b = [52, 700, 96, 96, 78, 110, 120, 136];
+    saveWidths(a, 'p-A');
+    saveWidths(b, 'p-B');
+    expect(loadWidths('p-A')).toEqual(a);
+    expect(loadWidths('p-B')).toEqual(b);
+    // 落到了两个不同的键上
+    expect(store.has('plan-gantt:colw:v2:p-A')).toBe(true);
+    expect(store.has('plan-gantt:colw:v2:p-B')).toBe(true);
+  });
+
+  it('未调过宽度的计划不受其它计划影响，回退到默认值', () => {
+    saveWidths([60, 300, 100, 100, 80, 120, 130, 140], 'p-A');
+    expect(loadWidths('p-C')).toEqual(defaultWidths());
+  });
+
+  it('v1 全局键迁移：本计划无专属键时，用旧的全局宽度作初值（不丢用户设置）', () => {
+    const legacy = [52, 465, 96, 96, 78, 101, 120, 136];
+    store.set('plan-gantt:column-widths:v1', JSON.stringify(legacy));
+    // 计划 A、B 都还没存过 → 都继承 v1 全局值
+    expect(loadWidths('p-A')).toEqual(legacy);
+    expect(loadWidths('p-B')).toEqual(legacy);
+    // 一旦某计划自己存过，就以它自己的为准
+    const own = [52, 200, 96, 96, 78, 110, 120, 136];
+    saveWidths(own, 'p-A');
+    expect(loadWidths('p-A')).toEqual(own);
+    expect(loadWidths('p-B')).toEqual(legacy); // B 仍吃 v1 值，不受 A 影响
+  });
+
+  it('迁移只读不写：读 v1 值不会凭空生成 v2 键', () => {
+    store.set('plan-gantt:column-widths:v1', JSON.stringify([52, 465, 96, 96, 78, 101, 120, 136]));
+    loadWidths('p-A');
+    expect(store.has('plan-gantt:colw:v2:p-A')).toBe(false);
   });
 
   it('loadWidths 在空存储时回退到默认值', () => {
-    expect(loadWidths()).toEqual(defaultWidths());
+    expect(loadWidths('p-A')).toEqual(defaultWidths());
   });
 
   it('loadWidths 在结构不符（数组长度错 / 元素类型错）时回退到默认值', () => {
-    store.set('plan-gantt:column-widths:v1', JSON.stringify([60, 300]));           // 长度错
-    expect(loadWidths()).toEqual(defaultWidths());
+    store.set('plan-gantt:colw:v2:p-A', JSON.stringify([60, 300]));           // 长度错
+    expect(loadWidths('p-A')).toEqual(defaultWidths());
     // 长度对但第 2 项是字符串：合法项保留，非法项回落到该列默认值
-    store.set('plan-gantt:column-widths:v1', JSON.stringify([60, 'oops', 100, 100, 80, 120, 130, 140]));
-    expect(loadWidths()).toEqual([60, COLUMNS[1].def, 100, 100, 80, 120, 130, 140]);
+    store.set('plan-gantt:colw:v2:p-A', JSON.stringify([60, 'oops', 100, 100, 80, 120, 130, 140]));
+    expect(loadWidths('p-A')).toEqual([60, COLUMNS[1].def, 100, 100, 80, 120, 130, 140]);
+  });
+
+  it('本计划键损坏时回退默认值，不会串到 v1 全局值', () => {
+    store.set('plan-gantt:colw:v2:p-A', JSON.stringify([60, 300])); // 长度错 → 该键作废
+    store.set('plan-gantt:column-widths:v1', JSON.stringify([52, 465, 96, 96, 78, 101, 120, 136]));
+    expect(loadWidths('p-A')).toEqual(defaultWidths());
   });
 
   it('loadWidths 把越界值 clamp 到合法区间后再还原', () => {
     // 把 name 列塞到 999999（超过 max=960）和 5（低于 min=120）
-    store.set('plan-gantt:column-widths:v1', JSON.stringify([52, 999999, 96, 96, 78, 110, 120, 136]));
-    expect(loadWidths()).toEqual([52, 960, 96, 96, 78, 110, 120, 136]);
+    store.set('plan-gantt:colw:v2:p-A', JSON.stringify([52, 999999, 96, 96, 78, 110, 120, 136]));
+    expect(loadWidths('p-A')).toEqual([52, 960, 96, 96, 78, 110, 120, 136]);
 
-    store.set('plan-gantt:column-widths:v1', JSON.stringify([52, 5, 96, 96, 78, 110, 120, 136]));
-    expect(loadWidths()).toEqual([52, 120, 96, 96, 78, 110, 120, 136]);
+    store.set('plan-gantt:colw:v2:p-A', JSON.stringify([52, 5, 96, 96, 78, 110, 120, 136]));
+    expect(loadWidths('p-A')).toEqual([52, 120, 96, 96, 78, 110, 120, 136]);
+  });
+
+  it('planId 为空 / undefined 时走 v1 全局键（兼容无计划上下文的调用）', () => {
+    const w = [60, 300, 100, 100, 80, 120, 130, 140];
+    saveWidths(w, null);
+    expect(store.has('plan-gantt:column-widths:v1')).toBe(true);
+    expect(loadWidths(null)).toEqual(w);
+    expect(loadWidths()).toEqual(w);
   });
 
   it('localStorage 抛错（隐私模式 / 容量满）时 load/save 不抛、降级到默认值', () => {
@@ -165,9 +215,9 @@ describe('U01 列宽：loadWidths / saveWidths（localStorage mock）', () => {
       setItem: () => { throw new Error('QuotaExceeded'); },
     };
     vi.stubGlobal('localStorage', broken);
-    expect(() => loadWidths()).not.toThrow();
-    expect(loadWidths()).toEqual(defaultWidths());
-    expect(() => saveWidths(defaultWidths())).not.toThrow();
+    expect(() => loadWidths('p-A')).not.toThrow();
+    expect(loadWidths('p-A')).toEqual(defaultWidths());
+    expect(() => saveWidths(defaultWidths(), 'p-A')).not.toThrow();
   });
 });
 

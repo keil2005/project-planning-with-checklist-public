@@ -51,7 +51,25 @@ export const AUTOFIT_PADDING = 26;
 /** 自适应时最多测量的行数，避免超大计划下逐行测量引发长任务 */
 const AUTOFIT_MAX_ROWS = 400;
 
-const STORAGE_KEY = 'plan-gantt:column-widths:v1';
+/**
+ * 列宽存储的键前缀。
+ *
+ * 设计取舍（用户裁定 2026-09-03：列宽按计划独立记忆）：
+ * 每个计划一个独立键 `plan-gantt:colw:v2:<planId>`，而不是把所有计划塞进一个大 JSON。
+ * 理由：① 写一次只影响一个计划，不必读改写整个对象；② 单个键损坏只丢该计划，不连带全部；
+ * ③ 计划数量有限，键数量可控。
+ */
+const STORAGE_KEY_PREFIX = 'plan-gantt:colw:v2:';
+
+/**
+ * v1 的全局单键（所有计划共用一份列宽）。保留用于迁移：
+ * 升级后首次打开某个计划时，用它作为初值，用户之前调好的宽度不丢。
+ */
+const LEGACY_STORAGE_KEY = 'plan-gantt:column-widths:v1';
+
+function storageKeyFor(planId: string | null | undefined): string {
+  return planId ? `${STORAGE_KEY_PREFIX}${planId}` : LEGACY_STORAGE_KEY;
+}
 
 /* ============================ 宽度读写 ============================ */
 
@@ -67,25 +85,41 @@ export function clampWidth(index: number, w: number): number {
   return Math.round(Math.min(Math.max(w, c.min), c.max));
 }
 
-/** 从 localStorage 读列宽；任何异常 / 结构不符都回退到默认值（版本变了自动丢弃旧值） */
-export function loadWidths(): number[] {
+/** 解析一行存储值：结构不符时逐项回退，能救回几列算几列 */
+function parseWidths(raw: string): number[] {
+  const def = defaultWidths();
+  const arr = JSON.parse(raw) as unknown;
+  if (!Array.isArray(arr) || arr.length !== COLUMNS.length) return def;
+  return def.map((d, i) => (typeof arr[i] === 'number' ? clampWidth(i, arr[i] as number) : d));
+}
+
+/**
+ * 读取某个计划的列宽。
+ *
+ * 降级链：本计划键 → v1 全局键（迁移，只读不写）→ 默认值。
+ * 迁移阶段刻意不写新键：用户没主动调过宽度就不落盘，避免凭空产生一堆配置。
+ * 一旦用户拖动/双击自适应，saveWidths 会写到本计划专属键，此后与全局值脱钩。
+ */
+export function loadWidths(planId?: string | null): number[] {
   const def = defaultWidths();
   try {
     if (typeof localStorage === 'undefined') return def;
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return def;
-    const arr = JSON.parse(raw) as unknown;
-    if (!Array.isArray(arr) || arr.length !== COLUMNS.length) return def;
-    return def.map((d, i) => (typeof arr[i] === 'number' ? clampWidth(i, arr[i] as number) : d));
+    const own = localStorage.getItem(storageKeyFor(planId));
+    if (own) return parseWidths(own);
+    if (planId) {
+      const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
+      if (legacy) return parseWidths(legacy);
+    }
+    return def;
   } catch {
     return def;
   }
 }
 
-export function saveWidths(widths: number[]): void {
+export function saveWidths(widths: number[], planId?: string | null): void {
   try {
     if (typeof localStorage === 'undefined') return;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(widths));
+    localStorage.setItem(storageKeyFor(planId), JSON.stringify(widths));
   } catch {
     /* 存储不可用时静默忽略：列宽只是偏好，不值得打断用户 */
   }

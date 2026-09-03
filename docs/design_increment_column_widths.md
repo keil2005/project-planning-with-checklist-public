@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 | --- | --- |
-| 文档版本 | v1.2（基线 `docs/system_design.md` v1.0 + `docs/design_increment_roster_assignee.md` v1.1 已交付） |
+| 文档版本 | v1.3（基线 `docs/system_design.md` v1.0 + `docs/design_increment_roster_assignee.md` v1.1 已交付） |
 | 架构师 | User01（自写自评） |
 | 形态 | 不变（Vite + React + MUI + Tailwind，Node/Express 中心化服务） |
 | 对应 PRD | `docs/prd_increment_column_widths.md` |
@@ -15,6 +15,8 @@
 | 日期 | 变更 |
 | --- | --- |
 | 2026-09-03 | 新增列宽模块 `src/columns.ts`；表头分隔条 + 拖动 + 双击自适应 + 持久化；OwnerAutocomplete popper 宽度改 max-content |
+| 2026-09-03 | `autoFitWidth` 兜底判据由「行总宽 ≤ 0」改为「**纯文字**宽 ≤ 0」（详见 §2.3 修正说明） |
+| 2026-09-03 | **列宽改按计划独立记忆**：存储键 `plan-gantt:column-widths:v1`（全局）→ `plan-gantt:colw:v2:<planId>`（每计划），带 v1 值迁移（§2.6） |
 
 ---
 
@@ -24,8 +26,8 @@
 
 | 文件 | 内容 | 说明 |
 | --- | --- | --- |
-| `src/columns.ts` | 列定义 `COLUMNS`（8 列 × {key, label, def, min, max}）、`FLEX_COLUMN_INDEX`（=1，name 列）、`GRID_TEMPLATE_VARS`、`COL_VAR_NAMES`、`TABLE_MIN_W_VAR`、`columnCssVars()`、`clampWidth()`、`gridTemplate()`、`tableMinWidth()`、`defaultWidths()`、`loadWidths()` / `saveWidths()`（localStorage 键 `plan-gantt:column-widths:v1`）、`autoFitWidth()`（用离屏 span 测量文本宽度，离屏/无布局环境安全降级返回 null） | 列宽单一真源；前后端不耦合（仅前端端） |
-| `src/__tests__/columns.test.ts` | 单测：COLUMNS 结构、clamp、grid、CSS 变量、load/save、autoFit 降级 | 12 个用例覆盖纯函数与降级路径 |
+| `src/columns.ts` | 列定义 `COLUMNS`（8 列 × {key, label, def, min, max}）、`FLEX_COLUMN_INDEX`（=1，name 列）、`GRID_TEMPLATE_VARS`、`COL_VAR_NAMES`、`TABLE_MIN_W_VAR`、`columnCssVars()`、`clampWidth()`、`gridTemplate()`、`tableMinWidth()`、`defaultWidths()`、`loadWidths(planId)` / `saveWidths(widths, planId)`（**每计划一键** `plan-gantt:colw:v2:<planId>`；旧全局键 `plan-gantt:column-widths:v1` 仅作迁移初值，只读不写）、`autoFitWidth()`（用离屏 span 测量文本宽度，测量不可用时安全降级返回 null） | 列宽单一真源；前后端不耦合（仅前端） |
+| `src/__tests__/columns.test.ts` | 单测：COLUMNS 结构、clamp、grid、CSS 变量、load/save（**含按计划独立、v1 迁移、迁移只读不写、planId 为空的兼容**）、autoFit 降级与正向计算 | 30 个用例覆盖纯函数与降级路径 |
 | `docs/prd_increment_column_widths.md` | 本次增量 PRD | — |
 | `docs/design_increment_column_widths.md` | 本文件 | — |
 
@@ -71,6 +73,56 @@ canvas `measureText` 在 jsdom 下会触发「Not implemented: HTMLCanvasElement
 ### 2.5 持久化键名加 `:v1`
 
 未来若列定义结构变化（增删列、调顺序），`:v1` 后缀能强制丢弃旧值、回落到默认宽度，不至于解析旧结构炸数据。
+
+### 2.6 列宽存储：为什么「每计划一个键」而不是一个大 JSON（2026-09-03 新增）
+
+用户裁定「列宽按计划独立记忆」后，有两种落盘方案：
+
+| 方案 | 优点 | 缺点 |
+| --- | --- | --- |
+| A. 单键存 `{ [planId]: number[] }` | 键少，一眼看全 | 每次保存都要「读全量 → 改一项 → 写全量」；**单个计划的值损坏会连带全部计划回落到默认** |
+| **B. 每计划一个键 `plan-gantt:colw:v2:<planId>`（选用）** | 写入只影响一个计划；单个键损坏只丢该计划；无需读改写 | 键数量随计划增长（每键约 40 字节，可忽略） |
+
+选 B。前缀统一为 `plan-gantt:colw:`，便于批量清理与测试断言。
+
+#### 迁移策略：只读不写，避免凭空产生配置
+
+```ts
+export function loadWidths(planId?: string | null): number[] {
+  const def = defaultWidths();
+  try {
+    if (typeof localStorage === 'undefined') return def;
+    const own = localStorage.getItem(storageKeyFor(planId));  // plan-gantt:colw:v2:<planId>
+    if (own) return parseWidths(own);
+    if (planId) {
+      const legacy = localStorage.getItem(LEGACY_STORAGE_KEY); // plan-gantt:column-widths:v1
+      if (legacy) return parseWidths(legacy);                  // 迁移：用旧全局值作初值
+    }
+    return def;
+  } catch {
+    return def;
+  }
+}
+```
+
+关键取舍：**迁移阶段不写新键**。用户只是打开计划看看，不该因此落盘一份配置。一旦用户真的拖动/双击自适应，`TaskTable` 的 `useEffect` 就会把值写到该计划专属键，此后与 v1 全局值脱钩。
+
+> 注意别做「值等于默认就不写」的小优化——那会导致用户把某列拖回默认值时旧值残留，下次打开又弹回去。无条件写才是对的。
+
+#### 组件侧的计划切换
+
+`TaskTable` 用 ref 记录「当前 `widths` 属于哪个计划」，只在 planId 真的变化时重载，避免挂载时的无谓 setState：
+
+```tsx
+const planId = plan?.planId ?? null;
+const [widths, setWidths] = useState<number[]>(() => loadWidths(planId));
+const loadedPlanRef = useRef<string | null>(planId);
+useEffect(() => {
+  if (loadedPlanRef.current === planId) return;
+  loadedPlanRef.current = planId;
+  setWidths(loadWidths(planId));
+}, [planId]);
+```
 
 ---
 
@@ -143,13 +195,17 @@ useEffect(() => {
 ## 4. 验证记录
 
 - `tsc --noEmit` 0 错误
-- `vitest run`：13 套件 / 252 + 12（新 columns.test.ts）= 264 测试全绿
+- `vitest run`：14 套件 / **282** 测试全绿（含 `columns.test.ts` 30 例）
 - playwright 真实浏览器实测：
   - 8 列默认宽 → 拖动 → 越界夹紧 → 双击自适应 → 刷新持久化 ✓
   - Project-A 计划双击「任务名称」分隔条：260 → 282（最长 32 字符任务名「Internal part supplier selection」）
   - Project-A 计划双击「依赖」分隔条：110 → 210（最长依赖表达式）
+  - Project-A 计划双击「开始 / 结束」分隔条：96 → 136（日期文本 + 日历按钮 22px）
   - Project-A 计划双击「时长」分隔条：78 → 60（命中 min 下限）
   - 负责人下拉：120 / 90 / 327 三档列宽下，浮层均为 200 px ✓
+  - **列边界对齐**：默认列宽 / name 拖到 697px / 横向滚到最右（scrollLeft=631）三种场景下，55 行（含追加行）的 8 列边界与表头逐像素对齐 ✓
+  - **按计划独立**：A 拖到 457 → 切 B 仍是默认 260 → B 拖到 137 → 切回 A 恢复 457 → 切回 B 恢复 137 ✓
+  - **v1 迁移**：只留旧全局键 `[52,465,96,96,78,101,120,136]` 时，A、B 均继承 465；把 B 改成 162 后 A 仍为 465 ✓
 - 控制台 0 报错
 
 ---
@@ -160,5 +216,7 @@ useEffect(() => {
 | --- | --- |
 | 横向滚动时分隔条被滚出左面板，鼠标拖不动 | 真实使用中用户看不见的分隔条不会去拖；测试时记得 `scrollLeft=0` 后再交互 |
 | localStorage 满 / 隐私模式 | `load/save` 全包 try/catch，降级为默认宽度 |
-| 列定义未来变化 | 持久化键带 `:v1` 后缀；`loadWidths` 检测结构不符自动回退默认 |
+| 列定义未来变化 | 持久化键带 `:v1` / `:v2` 后缀；`loadWidths` 检测结构不符自动回退默认 |
 | 自动测量把缩进算进文本宽度 | `autoFitWidth` 对 name 列把 `depth * 16` + 折叠三角 18px 作为 chrome 单加（per-row），不是 global 估算 |
+| **降级判据被常量项顶住**（2026-09-03 真实踩坑） | 原判据 `行总宽 <= 0` 因 chrome（装饰宽）恒 > 0 而永不触发。判据必须只用「纯测量值」：`textMax <= 0`。详见 §2.3 |
+| 计划被删除后残留列宽键 | 键约 40 字节，无清理入口；若日后做「删除计划」可顺带清 `plan-gantt:colw:v2:<planId>`。当前**不处理** |
