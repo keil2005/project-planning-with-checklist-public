@@ -108,9 +108,9 @@ describe('b·owner 落盘 / 历史快照 / 回滚', () => {
       ...created,
       version: 1,
       tasks: [
-        { id: 'T-0001', seq: 1, name: '设计', parentId: null, input: { start: '2026-08-26', end: null, duration: '5d' }, deps: [], owner: 'User01' },
-        { id: 'T-0002', seq: 2, name: '开发', parentId: null, input: { start: '2026-08-31', end: null, duration: '3d' }, deps: [], owner: 'Group A' },
-        { id: 'T-0003', seq: 3, name: '空负责人', parentId: null, input: { start: '2026-09-03', end: null, duration: '2d' }, deps: [], owner: '' },
+        { id: 'T-0001', seq: 1, name: '设计', parentId: null, input: { start: '2026-08-26', end: null, duration: '5d' }, deps: [], owner: ['User01'] },
+        { id: 'T-0002', seq: 2, name: '开发', parentId: null, input: { start: '2026-08-31', end: null, duration: '3d' }, deps: [], owner: ['Group A'], consultant: ['User02', 'User03'] },
+        { id: 'T-0003', seq: 3, name: '空负责人', parentId: null, input: { start: '2026-09-03', end: null, duration: '2d' }, deps: [], owner: [] },
       ],
     };
     const r = await api('PUT', `/api/plans/${planId}`, {
@@ -125,17 +125,19 @@ describe('b·owner 落盘 / 历史快照 / 回滚', () => {
 
     const saved = (await api('GET', `/api/plans/${planId}`)).data;
     const byId = Object.fromEntries(saved.tasks.map((t: Task) => [t.id, t]));
-    expect(byId['T-0001'].owner).toBe('User01');
-    expect(byId['T-0002'].owner).toBe('Group A');
-    expect(byId['T-0003'].owner).toBe('');
+    expect(byId['T-0001'].owner).toEqual(['User01']);
+    expect(byId['T-0002'].owner).toEqual(['Group A']);
+    expect(byId['T-0002'].consultant).toEqual(['User02', 'User03']);
+    expect(byId['T-0003'].owner).toEqual([]);
+    expect(byId['T-0003'].consultant).toEqual([]);
   });
 
   it('历史快照（v2 planSnapshot）含 owner', async () => {
     const v2 = await api('GET', `/api/plans/${planId}/history/2`);
     expect(v2.code).toBe(0);
     const byId = Object.fromEntries(v2.data.planSnapshot.tasks.map((t: Task) => [t.id, t]));
-    expect(byId['T-0001'].owner).toBe('User01');
-    expect(byId['T-0002'].owner).toBe('Group A');
+    expect(byId['T-0001'].owner).toEqual(['User01']);
+    expect(byId['T-0002'].owner).toEqual(['Group A']);
   });
 
   it('回滚到 v2 生成新版本，owner 仍保留', async () => {
@@ -149,8 +151,8 @@ describe('b·owner 落盘 / 历史快照 / 回滚', () => {
     expect(restore.data.version).toBe(3);
     const after = (await api('GET', `/api/plans/${planId}`)).data;
     const byId = Object.fromEntries(after.tasks.map((t: Task) => [t.id, t]));
-    expect(byId['T-0001'].owner).toBe('User01');
-    expect(byId['T-0002'].owner).toBe('Group A');
+    expect(byId['T-0001'].owner).toEqual(['User01']);
+    expect(byId['T-0002'].owner).toEqual(['Group A']);
   });
 });
 
@@ -162,8 +164,8 @@ describe('c·owner 不参与排程（红线）', () => {
       task('T-0002', 'B', { input: { start: '2026-08-31', end: null, duration: '3d' }, deps: [{ predecessorId: 'T-0001', type: 'FS', lag: null, lagSign: 1, raw: '1FS' }] }),
     ]);
     const withOwner = buildPlan([
-      task('T-0001', 'A', { input: { start: '2026-08-26', end: null, duration: '5d' }, deps: [], owner: 'User01' }),
-      task('T-0002', 'B', { input: { start: '2026-08-31', end: null, duration: '3d' }, deps: [{ predecessorId: 'T-0001', type: 'FS', lag: null, lagSign: 1, raw: '1FS' }], owner: 'Group A' }),
+      task('T-0001', 'A', { input: { start: '2026-08-26', end: null, duration: '5d' }, deps: [], owner: ['User01'] }),
+      task('T-0002', 'B', { input: { start: '2026-08-31', end: null, duration: '3d' }, deps: [{ predecessorId: 'T-0001', type: 'FS', lag: null, lagSign: 1, raw: '1FS' }], owner: ['Group A'], consultant: ['User02'] }),
     ]);
 
     const s1 = schedule(base);
@@ -171,42 +173,61 @@ describe('c·owner 不参与排程（红线）', () => {
 
     expect(s2.computed).toEqual(s1.computed);
     expect(s2.diagnostics).toEqual(s1.diagnostics);
-    // 不产生任何与 owner 相关的诊断
-    expect(s2.diagnostics.every((d) => d.field !== 'owner')).toBe(true);
+    // 不产生任何与人员字段相关的诊断（TaskField 已不含人员字段，这里额外兜底看 message）
+    expect(s2.diagnostics.every((d) => !(d.message ?? '').includes('负责人') && !(d.message ?? '').includes('顾问人'))).toBe(true);
   });
 
   it('owner 字段不出现在任何 Diagnostic 中', () => {
     const p = buildPlan([
-      task('T-0001', 'A', { input: { start: '2026-08-26', end: null, duration: '5d' }, deps: [], owner: '外部张三' }),
+      task('T-0001', 'A', { input: { start: '2026-08-26', end: null, duration: '5d' }, deps: [], owner: ['外部张三'], consultant: ['外部李四'] }),
     ]);
     const s = schedule(p);
-    expect(s.diagnostics.some((d) => d.field === 'owner' || (d.message ?? '').includes('owner'))).toBe(false);
+    expect(s.diagnostics.some((d) => (d.message ?? '').includes('负责人') || (d.message ?? '').includes('顾问人'))).toBe(false);
   });
 });
 
 /* ===================== d·导出含 owner ===================== */
 describe('d·导出含负责人', () => {
   const plan = buildPlan([
-    task('T-0001', '设计', { input: { start: '2026-08-26', end: null, duration: '5d' }, deps: [], owner: 'User01' }),
-    task('T-0002', '联调', { input: { start: '2026-08-31', end: null, duration: '3d' }, deps: [], owner: 'Group A' }),
-    task('T-0003', '未指派', { input: { start: '2026-09-03', end: null, duration: '2d' }, deps: [], owner: '' }),
+    task('T-0001', '设计', { input: { start: '2026-08-26', end: null, duration: '5d' }, deps: [], owner: ['User01', 'User02'], consultant: ['User13'] }),
+    task('T-0002', '联调', { input: { start: '2026-08-31', end: null, duration: '3d' }, deps: [], owner: ['Group A'] }),
+    task('T-0003', '未指派', { input: { start: '2026-09-03', end: null, duration: '2d' }, deps: [], owner: [] }),
   ]);
   const sched = schedule(plan);
 
-  it('CSV 含「负责人」列且插入「依赖」与「来源」之间', () => {
+  it('CSV 含「负责人」「顾问人」列，顺序插在「依赖」与「来源」之间', () => {
     const csv = toCsv(plan, sched);
     const headerLine = csv.replace(/^﻿/, '').split('\r\n')[0];
     expect(headerLine).toContain('负责人');
-    // 期望表头：依赖,负责人,来源（保持相对顺序）
+    expect(headerLine).toContain('顾问人');
+    // 期望表头：依赖,负责人,顾问人,来源（保持相对顺序）
     const idxDep = headerLine.indexOf('依赖');
     const idxOwner = headerLine.indexOf('负责人');
+    const idxConsultant = headerLine.indexOf('顾问人');
     const idxSrc = headerLine.indexOf('来源');
     expect(idxDep).toBeGreaterThan(-1);
     expect(idxOwner).toBeGreaterThan(idxDep);
-    expect(idxSrc).toBeGreaterThan(idxOwner);
-    expect(headerLine.split(',').length).toBe(12);
+    expect(idxConsultant).toBeGreaterThan(idxOwner);
+    expect(idxSrc).toBeGreaterThan(idxConsultant);
+    expect(headerLine.split(',').length).toBe(13);
     // 'Group A' 含空格但无逗号 → 不被拆成两列
     expect(csv).toContain('Group A');
+    // 多人用顿号拼接，不用逗号（否则会撑出额外 CSV 列）
+    expect(csv).toContain('User01、User02');
+    expect(csv).toContain('User13');
+  });
+
+  it('MSPDI 里顾问人只进 Notes，不生成 Resource / Assignment', () => {
+    const xml = toMsProjectXml(plan, sched);
+    // 顾问人 User13 不应成为资源
+    const resourceNames = [...xml.matchAll(/<Resources>[\s\S]*?<\/Resources>/g)]
+      .map((m) => m[0])
+      .join('');
+    expect(resourceNames).toContain('<Name>User01</Name>');
+    expect(resourceNames).toContain('<Name>User02</Name>');
+    expect(resourceNames).not.toContain('<Name>User13</Name>');
+    // 但信息不丢：写进任务 Notes
+    expect(xml).toContain('顾问人：User13');
   });
 
   it('MSPDI 含 <Resources> + <Assignments>，owner 进入 ResourceName', () => {
@@ -216,9 +237,9 @@ describe('d·导出含负责人', () => {
     // 被使用的负责人作为资源，其名称 = 负责人
     expect(xml).toContain('<Name>User01</Name>');
     expect(xml).toContain('<Name>Group A</Name>');
-    // 空 owner 任务不应生成 Assignment
+    // 空 owner 任务不应生成 Assignment。
+    // T-0001 有 2 个负责人（User01 / User02）→ 2 条；T-0002 一个（Group A）→ 1 条；共 3 条。
     const assignmentCount = (xml.match(/<Assignment>/g) ?? []).length;
-    // 仅 T-0001 / T-0002 有 owner，应为 2 条
-    expect(assignmentCount).toBe(2);
+    expect(assignmentCount).toBe(3);
   });
 });

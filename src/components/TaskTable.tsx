@@ -23,6 +23,7 @@ import {
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
 import Autocomplete from '@mui/material/Autocomplete';
+import Chip from '@mui/material/Chip';
 import TextField from '@mui/material/TextField';
 import AddIcon from '@mui/icons-material/Add';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
@@ -55,6 +56,7 @@ import {
   hasChildren,
 } from '../../shared/scheduler';
 import { formatDuration, isValidISODate } from '../../shared/datetime';
+import { formatPeople, normalizePeople } from '../../shared/people';
 import {
   DERIVE_SOURCE_LABEL,
   ErrCode,
@@ -192,10 +194,10 @@ function CellInput(props: CellInputProps): JSX.Element {
   );
 }
 
-/* ============================ 负责人联想单元格 ============================ */
+/* ==================== 人员多选单元格（负责人 / 顾问人共用） ==================== */
 
 /** 命中子串高亮（大小写不敏感，保留原序） */
-function HighlightOwner({ text, query }: { text: string; query: string }): JSX.Element {
+function HighlightText({ text, query }: { text: string; query: string }): JSX.Element {
   const q = query.trim();
   if (q === '') return <>{text}</>;
   const idx = text.toLowerCase().indexOf(q.toLowerCase());
@@ -211,149 +213,232 @@ function HighlightOwner({ text, query }: { text: string; query: string }): JSX.E
   );
 }
 
-interface OwnerAutocompleteProps {
-  value: string;
+interface PeopleCellProps {
+  /** 已选人员（恒为数组，可能为空） */
+  value: string[];
   disabled: boolean;
   candidates: string[];
-  onCommit: (v: string) => void;
+  /** 列名，仅用于 placeholder / tooltip（负责人 / 顾问人） */
+  label: string;
+  onCommit: (names: string[]) => void;
+  /**
+   * 编辑态变化回传。父级据此放开单元格的 overflow：
+   * `.pg-cell` 默认 overflow:hidden，会把绝对定位的编辑器裁成 120px 宽的一条。
+   */
+  onEditingChange?: (editing: boolean) => void;
 }
 
 /**
- * 负责人单元格：只读展示 owner；点击/聚焦进入 Autocomplete 联想编辑。
- *  - 空输入展示完整候选（原序）；非空输入大小写不敏感子串过滤、命中高亮（K21/Q5）；
- *  - freeSolo：无命中时下拉显示「使用 "xxx"」自由文本项，确认即以自由文本保存（P0-6）；
- *  - 确认时 trim 首尾、保留中间空格、不归一大小写（K21）；Esc 取消；失焦确认；
- *  - popper 浮层呈现，不撑行高（K22，ROW_H=32）。
+ * 人员单元格（负责人 / 顾问人）：只读态显示「A、B」，点击进入多选联想编辑。
+ *
+ * 行为约定（U02）：
+ *  - **可多选**：点一次选一个人，下拉不关闭，可连续点选；已选项显示对勾，再点一次取消；
+ *  - **自由文本**：输入名单外姓名回车即新增（freeSolo），与既有负责人行为一致；
+ *  - **实时落库**：每次增删都立即提交到 store，不依赖失焦保存，避免"选完就跑"丢数据；
+ *  - **失焦**：把输入框里没确认的残字也补成一个人，然后关闭编辑器；
+ *  - **Esc**：关闭编辑器（已选保留，因为增删是即时生效的，Esc 无法回滚整段编辑）；
+ *  - 行高锁死 ROW_H=32（K16）：编辑器用绝对定位浮层，不占据文档流，撑开时向下覆盖下方行。
  */
-function OwnerAutocomplete(props: OwnerAutocompleteProps): JSX.Element {
-  const { value, disabled, candidates, onCommit } = props;
+function PeopleCell(props: PeopleCellProps): JSX.Element {
+  const { value, disabled, candidates, label, onCommit, onEditingChange } = props;
   const [editing, setEditing] = useState<boolean>(false);
-  const [inputValue, setInputValue] = useState<string>(value);
+  const [inputValue, setInputValue] = useState<string>('');
   const inputRef = useRef<HTMLInputElement | null>(null);
+  /** 编辑态浮层容器，供 Esc 的捕获阶段监听挂载 */
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  /** 供 blur 回调读取最新值，避免闭包拿到过期 props */
+  const valueRef = useRef<string[]>(value);
+  valueRef.current = value;
+  /** 关闭动作去重：blur 与 Esc 可能同时触发 */
+  const closingRef = useRef<boolean>(false);
 
-  const committedRef = useRef<boolean>(false);
+  const close = useCallback((): void => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    // 延迟到下一 tick 再卸载 Autocomplete，避免「选中即同步卸载」触发 MUI portal 的
+    // removeChild 竞态（React 18 下会抛渲染期异常、整页白屏、内存态数据看似丢失）。
+    window.setTimeout(() => {
+      setEditing(false);
+      setInputValue('');
+      closingRef.current = false;
+    }, 0);
+  }, []);
 
-  const finish = useCallback(
-    (raw: string): void => {
-      if (committedRef.current) return;
-      committedRef.current = true;
-      const v = raw.trim();
-      onCommit(v);
-      // 延迟到下一 tick 再卸载 Autocomplete，避免「选中即同步卸载」触发 MUI portal 的
-      // removeChild 竞态（React 18 下会抛渲染期异常、整页白屏、内存态数据看似丢失）。
-      window.setTimeout(() => setEditing(false), 0);
-    },
-    [onCommit],
-  );
+  /** 收尾：输入框里的残字补成一个人（freeSolo 语义），然后关闭编辑器 */
+  const finish = useCallback((): void => {
+    const extra = normalizePeople([inputRef.current?.value ?? '']);
+    if (extra.length > 0) onCommit(normalizePeople([...valueRef.current, ...extra]));
+    close();
+  }, [close, onCommit]);
+
+  /** 捕获阶段监听读最新 finish，避免 effect 因 onCommit 每次渲染换引用而反复解绑重绑 */
+  const finishRef = useRef(finish);
+  finishRef.current = finish;
+
+  // Esc 关闭编辑器 —— 必须走「捕获阶段」的原生监听，不能用 React 的 onKeyDown。
+  // MUI useAutocomplete 在自己的 Escape 分支里调了 event.stopPropagation()，而 React 的事件是
+  // 委托在 root 容器上的，冒泡到包装 div 之前就被 MUI 掐断 → 实测 Esc 关不掉编辑器（只能靠失焦）。
+  // 捕获阶段先于目标元素的 MUI 处理器执行，这里 stopPropagation 还能顺带屏蔽 MUI 自己的处理。
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!editing || !el) return;
+    const onEsc = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      e.stopPropagation();
+      finishRef.current();
+    };
+    el.addEventListener('keydown', onEsc, true);
+    return () => el.removeEventListener('keydown', onEsc, true);
+  }, [editing]);
 
   const startEdit = useCallback((): void => {
     if (disabled) return;
-    committedRef.current = false;
-    setInputValue(value);
+    closingRef.current = false;
+    setInputValue('');
     setEditing(true);
-  }, [disabled, value]);
+  }, [disabled]);
 
   // 进入编辑态时聚焦输入框。
-  // ⚠️ useEffect 必须在 early return 之前「无条件」调用：否则 editing 由 false→true 切换时，
-  // 本组件会多渲染一个 hook，触发 React "Rendered more hooks than during the previous render"，
-  // 因为没有 ErrorBoundary 而整页卸载（即用户看到的"点击负责人后闪退、内容被清空"）。
+  // ⚠️ useEffect 必须无条件调用：否则 editing false→true 切换时本组件会多渲染一个 hook，
+  // 触发 React "Rendered more hooks than during the previous render"，因无 ErrorBoundary 而整页卸载。
   useEffect(() => {
     if (!editing) return;
     const el = inputRef.current;
-    if (el) {
-      el.focus();
-      el.select();
-    }
+    if (el) el.focus();
   }, [editing]);
 
+  // 把编辑态同步给父级（用于放开单元格 overflow），卸载时复位
+  useEffect(() => {
+    onEditingChange?.(editing);
+  }, [editing, onEditingChange]);
+
   // 只读态
+  const text = formatPeople(value);
   if (!editing) {
     return (
       <div
         className={`pg-input ${disabled ? 'pg-input--disabled' : ''}`}
         style={disabled ? undefined : { cursor: 'pointer' }}
-        title={disabled ? undefined : '点击设置负责人'}
+        title={disabled ? text || undefined : `点击设置${label}${text ? `（当前：${text}）` : ''}`}
         onClick={startEdit}
       >
-        {value ? value : <span className="text-slate-400">—</span>}
+        {text !== '' ? (
+          text
+        ) : (
+          <span className="text-slate-400">—</span>
+        )}
       </div>
     );
   }
 
-  // 编辑态：Autocomplete（popper 浮层）
+  // 编辑态：绝对定位浮层里的多选 Autocomplete（不占文档流 → 不撑高行）
   return (
-    <Autocomplete
-      freeSolo
-      disablePortal={false}
-      forcePopupIcon={false}
-      /* MUI 默认把浮层宽度锁成「与输入框同宽」，短名单会被挤成一条缝。
-         这里用 max-content 让浮层按最长候选撑开，配 min/max 兜底两端。 */
-      slotProps={{
-        popper: {
-          placement: 'bottom-start',
-          style: { width: 'max-content', minWidth: OWNER_DROPDOWN_MIN_W, maxWidth: OWNER_DROPDOWN_MAX_W },
-        },
-        paper: { sx: { maxWidth: OWNER_DROPDOWN_MAX_W } },
+    <div
+      ref={wrapRef}
+      className="pg-people-editor"
+      onBlur={(e) => {
+        // 焦点仍在编辑器内部（点清空按钮 / 标签删除图标）时不收尾
+        if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+        finish();
       }}
-      selectOnFocus
-      clearOnBlur={false}
-      blurOnSelect
-      openOnFocus
-      size="small"
-      options={candidates}
-      inputValue={inputValue}
-      onInputChange={(_e, v) => setInputValue(v)}
-      getOptionLabel={(o) => o}
-      filterOptions={(opts, state) => {
-        const q = state.inputValue.trim().toLowerCase();
-        if (q === '') return opts;
-        return opts.filter((o) => o.toLowerCase().includes(q));
-      }}
-      isOptionEqualToValue={(o, v) => o === v}
-      onChange={(_e, val, reason) => {
-        if (reason === 'selectOption' || reason === 'createOption') {
-          finish(val ?? '');
+    >
+      <Autocomplete
+        multiple
+        freeSolo
+        /* 多选必须关掉：MUI 默认 true 会在选完一个人后立刻失焦，没法连选 */
+        disableCloseOnSelect
+        disablePortal={false}
+        forcePopupIcon={false}
+        /* MUI 默认把浮层宽度锁成「与输入框同宽」，短名单会被挤成一条缝。
+           这里用 max-content 让浮层按最长候选撑开，配 min/max 兜底两端。 */
+        slotProps={{
+          popper: {
+            placement: 'bottom-start',
+            style: { width: 'max-content', minWidth: OWNER_DROPDOWN_MIN_W, maxWidth: OWNER_DROPDOWN_MAX_W },
+          },
+          paper: { sx: { maxWidth: OWNER_DROPDOWN_MAX_W } },
+        }}
+        selectOnFocus
+        clearOnBlur={false}
+        openOnFocus
+        size="small"
+        options={candidates}
+        value={value}
+        inputValue={inputValue}
+        onInputChange={(_e, v) => setInputValue(v)}
+        getOptionLabel={(o) => o}
+        filterOptions={(opts, state) => {
+          const q = state.inputValue.trim().toLowerCase();
+          if (q === '') return opts;
+          return opts.filter((o) => o.toLowerCase().includes(q));
+        }}
+        isOptionEqualToValue={(o, v) => o === v}
+        onChange={(_e, val, reason) => {
+          if (
+            reason === 'selectOption' ||
+            reason === 'createOption' ||
+            reason === 'removeOption' ||
+            reason === 'clear'
+          ) {
+            onCommit(normalizePeople(val));
+          }
+        }}
+        renderTags={(tagValue, getTagProps) =>
+          tagValue.map((option, index) => {
+            const { key, ...tagProps } = getTagProps({ index });
+            return (
+              <Chip
+                key={key}
+                label={option}
+                size="small"
+                sx={{
+                  height: 20,
+                  fontSize: 11,
+                  '& .MuiChip-label': { paddingLeft: 6, paddingRight: 6 },
+                  '& .MuiChip-deleteIcon': { fontSize: 14, margin: '0 3px 0 -2px' },
+                }}
+                {...tagProps}
+              />
+            );
+          })
         }
-      }}
-      onBlur={() => finish(inputValue)}
-      onKeyDown={(e) => {
-        if (e.key === 'Escape') {
-          e.preventDefault();
-          committedRef.current = true;
-          setEditing(false);
-        }
-      }}
-      renderOption={(optionProps, option, { inputValue: iv }) => {
-        const isFree = option === iv && !candidates.includes(option);
-        return (
-          <li {...optionProps}>
-            {isFree ? (
-              <span>
-                使用 <strong>&ldquo;{option}&rdquo;</strong>
-              </span>
-            ) : (
-              <HighlightOwner text={option} query={iv} />
-            )}
-          </li>
-        );
-      }}
-      renderInput={(params) => (
-        <TextField
-          {...params}
-          inputRef={inputRef}
-          variant="standard"
-          size="small"
-          autoFocus
-          placeholder="输入或选择负责人"
-          sx={{
-            '& .MuiInputBase-root': { height: 24, fontSize: 12 },
-            '& .MuiInput-underline:before': { borderBottom: 'none' },
-            '& .MuiInput-underline:after': { borderBottom: 'none' },
-            '& .MuiInputBase-input': { padding: '0 4px' },
-          }}
-        />
-      )}
-    />
+        renderOption={(optionProps, option, { inputValue: iv }) => {
+          const isFree = option === iv && !candidates.includes(option);
+          const selected = value.includes(option);
+          return (
+            <li {...optionProps}>
+              {isFree ? (
+                <span>
+                  添加 <strong>&ldquo;{option}&rdquo;</strong>
+                </span>
+              ) : (
+                <span style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                  <span style={{ width: 18, flex: '0 0 18px', color: '#2563eb' }}>{selected ? '✓' : ''}</span>
+                  <HighlightText text={option} query={iv} />
+                </span>
+              )}
+            </li>
+          );
+        }}
+        renderInput={(params) => (
+          <TextField
+            {...params}
+            inputRef={inputRef}
+            variant="standard"
+            size="small"
+            autoFocus
+            placeholder={value.length > 0 ? '继续添加…' : `输入或选择${label}`}
+            sx={{
+              '& .MuiInputBase-root': { minHeight: 24, fontSize: 12, flexWrap: 'wrap' },
+              '& .MuiInput-underline:before': { borderBottom: 'none' },
+              '& .MuiInput-underline:after': { borderBottom: 'none' },
+              '& .MuiInputBase-input': { padding: '0 2px', width: 'auto', minWidth: 60, flex: '1 1 60px' },
+            }}
+          />
+        )}
+      />
+    </div>
   );
 }
 
@@ -377,6 +462,7 @@ function TaskRow(props: RowProps): JSX.Element {
   const { task, computed, depth, isParent, collapsed, idToSeq, diagnostics, canEdit, selected, gridStyle } = props;
 
   const updateCell = useStore((s) => s.updateCell);
+  const updatePeople = useStore((s) => s.updatePeople);
   const addRow = useStore((s) => s.addRow);
   const deleteRow = useStore((s) => s.deleteRow);
   const indent = useStore((s) => s.indent);
@@ -387,6 +473,10 @@ function TaskRow(props: RowProps): JSX.Element {
   const candidates = useOwnerCandidates();
   const calendar = useStore((s) => s.calendar);
   const openNonWorkingPrompt = useStore((s) => s.openNonWorkingPrompt);
+
+  // 人员列的编辑态：用于放开单元格 overflow，让多选浮层能溢出窄格
+  const [ownerEditing, setOwnerEditing] = useState<boolean>(false);
+  const [consultantEditing, setConsultantEditing] = useState<boolean>(false);
 
   // 开始/结束日期的月历弹窗状态
   const [dateField, setDateField] = useState<'start' | 'end' | null>(null);
@@ -563,13 +653,27 @@ function TaskRow(props: RowProps): JSX.Element {
         />
       </div>
 
-      {/* 负责人 */}
-      <div className="pg-cell">
-        <OwnerAutocomplete
-          value={task.owner ?? ''}
+      {/* 负责人（可多人） */}
+      <div className={`pg-cell pg-cell--people ${ownerEditing ? 'pg-cell--people-editing' : ''}`}>
+        <PeopleCell
+          value={task.owner ?? []}
           disabled={!canEdit}
           candidates={candidates}
-          onCommit={(v) => updateCell(task.id, 'owner', v)}
+          label="负责人"
+          onEditingChange={setOwnerEditing}
+          onCommit={(names) => updatePeople(task.id, 'owner', names)}
+        />
+      </div>
+
+      {/* 顾问人（可多人） */}
+      <div className={`pg-cell pg-cell--people ${consultantEditing ? 'pg-cell--people-editing' : ''}`}>
+        <PeopleCell
+          value={task.consultant ?? []}
+          disabled={!canEdit}
+          candidates={candidates}
+          label="顾问人"
+          onEditingChange={setConsultantEditing}
+          onCommit={(names) => updatePeople(task.id, 'consultant', names)}
         />
       </div>
 
@@ -760,12 +864,24 @@ export default function TaskTable({ scrollRef, onScroll }: TaskTableProps): JSX.
     [visible, sched, depthMap, parentSet, plan, idToSeq],
   );
 
-  /* 选中行自动滚入可视区（诊断条点击定位用） */
+  /* 选中行自动滚入可视区（诊断条点击定位用）。
+     ⚠️ 只滚纵向，不动 scrollLeft：横向位置是用户自己选的视图（例如特意滚到右侧看负责人 / 顾问人）。
+     原先的 scrollIntoView({ block:'nearest' }) 默认 inline:'nearest'，而当行宽 > 面板宽度时
+     浏览器会横向对齐边缘 → 点任意单元格表格就横向猛跳一截（U02 新增顾问人列后表格更宽，必现）。 */
   useEffect(() => {
     if (!selectedTaskId) return;
     const el = rowRefs.current.get(selectedTaskId);
-    if (el) el.scrollIntoView({ block: 'nearest' });
-  }, [selectedTaskId]);
+    const box = scrollRef.current;
+    if (!el || !box) return;
+    const boxRect = box.getBoundingClientRect();
+    // 表头是 sticky，会把容器顶部盖住，可视区上沿要往下让出一个表头高度
+    const head = box.querySelector('.pg-sticky-head');
+    const top = boxRect.top + (head ? head.getBoundingClientRect().height : 0);
+    const bottom = boxRect.bottom;
+    const r = el.getBoundingClientRect();
+    if (r.top < top) box.scrollTop += r.top - top;
+    else if (r.bottom > bottom) box.scrollTop += r.bottom - bottom;
+  }, [selectedTaskId, scrollRef]);
 
   if (!plan) return <div className="pg-scroll" />;
 

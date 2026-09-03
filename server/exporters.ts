@@ -25,6 +25,7 @@ import {
   parseISODate,
 } from '../shared/datetime';
 import { buildIdSeqMaps, formatDepsExpr } from '../shared/scheduler';
+import { formatPeople, normalizePeople } from '../shared/people';
 import type {
   DepType,
   ExportFormat,
@@ -89,6 +90,20 @@ function inclusiveFinishDate(start: ISODate, end: ISODate): ISODate {
   const days = diffDays(start, end);
   if (days <= 1) return start;
   return addDays(end, -1);
+}
+
+/**
+ * MSPDI 的 Notes 文本 = 用户备注（原样）+ 顾问人（若有）。
+ *
+ * 顾问人不生成 Resource/Assignment（用户裁定 2026-09-03）：它只是"该问谁"的信息，
+ * 算成资源会让 MS Project 的投入/工时口径失真，因此降级为文本附注。
+ */
+function buildNotes(t: Task): string {
+  const note = typeof t.note === 'string' ? t.note : '';
+  const consultants = normalizePeople(t.consultant);
+  if (consultants.length === 0) return note;
+  const line = `顾问人：${formatPeople(consultants)}`;
+  return note.trim() === '' ? line : `${note}\n${line}`;
 }
 
 /** 文件名：{planName}-v{version}.{ext} */
@@ -235,8 +250,11 @@ export function toMsProjectXml(
     if (typeof t.progress === 'number') {
       te.ele('PercentComplete').txt(String(Math.max(0, Math.min(100, Math.round(t.progress))))).up();
     }
-    if (t.note && t.note.trim() !== '') {
-      te.ele('Notes').txt(t.note).up();
+    // 顾问人按用户裁定（2026-09-03）不入 Resource/Assignment，只作为备注附加在任务 Notes 末尾，
+    // 这样 MS Project 的资源工时口径不受影响，但信息不丢。
+    const notes = buildNotes(t);
+    if (notes !== '') {
+      te.ele('Notes').txt(notes).up();
     }
 
     // ConstraintType / ConstraintDate
@@ -275,14 +293,16 @@ export function toMsProjectXml(
   tasksEle.up();
 
   // ---------------- Resources / Assignments（负责人，Q3 选型） ----------------
-  // 收集本计划实际使用到的负责人（非空、去重、保序）；ResourceUID 从 1000 起，避开 Task UID（1..N）
+  // 收集本计划实际使用到的负责人（非空、去重、保序）；ResourceUID 从 1000 起，避开 Task UID（1..N）。
+  // 负责人已可多人（U02），故按「任务 → 多人」展开成一资源多分配；顾问人不在此列（见 buildNotes）。
   const usedOwners: string[] = [];
   const seenOwner = new Set<string>();
   for (const t of tasks) {
-    const o = t.owner?.trim();
-    if (o && !seenOwner.has(o)) {
-      seenOwner.add(o);
-      usedOwners.push(o);
+    for (const o of normalizePeople(t.owner)) {
+      if (!seenOwner.has(o)) {
+        seenOwner.add(o);
+        usedOwners.push(o);
+      }
     }
   }
   const resUidOf = new Map<string, number>();
@@ -304,18 +324,20 @@ export function toMsProjectXml(
   const assignmentsEle = doc.ele('Assignments');
   let assignUid = 1;
   for (const t of tasks) {
-    const o = t.owner?.trim();
-    if (!o) continue; // 空 owner 不生成 Assignment
-    const resUid = resUidOf.get(o);
     const taskUid = uidOf.get(t.id);
-    if (resUid === undefined || taskUid === undefined) continue;
-    const ae = assignmentsEle.ele('Assignment');
-    ae.ele('UID').txt(String(assignUid++)).up();
-    ae.ele('TaskUID').txt(String(taskUid)).up();
-    ae.ele('ResourceUID').txt(String(resUid)).up();
-    ae.ele('Units').txt('100').up();
-    ae.ele('PercentWorkComplete').txt('0').up();
-    ae.up();
+    if (taskUid === undefined) continue;
+    // 一个任务可有多个负责人 → 每人一条 Assignment
+    for (const o of normalizePeople(t.owner)) {
+      const resUid = resUidOf.get(o);
+      if (resUid === undefined) continue;
+      const ae = assignmentsEle.ele('Assignment');
+      ae.ele('UID').txt(String(assignUid++)).up();
+      ae.ele('TaskUID').txt(String(taskUid)).up();
+      ae.ele('ResourceUID').txt(String(resUid)).up();
+      ae.ele('Units').txt('100').up();
+      ae.ele('PercentWorkComplete').txt('0').up();
+      ae.up();
+    }
   }
   assignmentsEle.up();
 
@@ -326,7 +348,21 @@ export function toMsProjectXml(
    CSV
    ============================================================ */
 
-const CSV_HEADER = ['行号', '任务ID', '层级', '任务名称(缩进)', '父任务ID', '开始', '结束', '时长', '依赖', '负责人', '来源', '备注'];
+const CSV_HEADER = [
+  '行号',
+  '任务ID',
+  '层级',
+  '任务名称(缩进)',
+  '父任务ID',
+  '开始',
+  '结束',
+  '时长',
+  '依赖',
+  '负责人',
+  '顾问人',
+  '来源',
+  '备注',
+];
 
 function csvCell(value: string | number | null | undefined): string {
   const s = value === null || value === undefined ? '' : String(value);
@@ -355,7 +391,9 @@ export function toCsv(plan: Plan, sched: ScheduleResult): string {
         csvCell(c.end),
         csvCell(formatDuration(c.duration)),
         csvCell(formatDepsExpr(t.deps, idToSeq)),
-        csvCell(t.owner ?? ''),
+        // 人员列可多人 → 顿号拼接（与表格单元格展示一致）
+        csvCell(formatPeople(normalizePeople(t.owner))),
+        csvCell(formatPeople(normalizePeople(t.consultant))),
         csvCell(c.derivedFrom),
         csvCell(t.note ?? ''),
       ].join(','),

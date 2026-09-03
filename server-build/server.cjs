@@ -48159,6 +48159,41 @@ var import_node_fs5 = __toESM(require("node:fs"));
 var import_node_os = __toESM(require("node:os"));
 var import_node_path4 = __toESM(require("node:path"));
 
+// shared/people.ts
+var PEOPLE_SEP = "\u3001";
+var SPLIT_RE = /[,，、;；|/]+/;
+function dedupe(raw) {
+  const out = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const s of raw) {
+    const t = s.trim();
+    if (t === "") continue;
+    const key = t.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(t);
+  }
+  return out;
+}
+function normalizePeople(v) {
+  if (Array.isArray(v)) {
+    const flat = [];
+    for (const item of v) {
+      if (typeof item !== "string") continue;
+      flat.push(...item.split(SPLIT_RE));
+    }
+    return dedupe(flat);
+  }
+  if (typeof v === "string") {
+    return dedupe(v.split(SPLIT_RE));
+  }
+  return [];
+}
+function formatPeople(names, sep = PEOPLE_SEP) {
+  if (!names || names.length === 0) return "";
+  return names.join(sep);
+}
+
 // shared/scheduler.ts
 var ONE_DAY = { value: 1, unit: "d" };
 function diag(level, code, message, taskId, field) {
@@ -48293,8 +48328,12 @@ function normalizePlan(input) {
       input: sanitizeInput(t.input),
       deps: sanitizeDeps(t.deps),
       collapsed: t.collapsed === true,
+      // 人员字段（负责人 / 顾问人）：恒归一化为数组。
+      // 历史数据的 owner 是 string（可能手打过 "User01,User13"），normalizePeople 会自动拆成数组；
+      // 旧计划缺失 consultant → 空数组。写回后即完成升级，无需单独的 schemaVersion 迁移脚本。
+      owner: normalizePeople(t.owner),
+      consultant: normalizePeople(t.consultant),
       ...typeof t.note === "string" ? { note: t.note } : {},
-      ...typeof t.owner === "string" ? { owner: t.owner } : {},
       ...typeof t.progress === "number" ? { progress: t.progress } : {}
     });
   }
@@ -48921,6 +48960,14 @@ function inclusiveFinishDate(start, end) {
   if (days <= 1) return start;
   return addDays(end, -1);
 }
+function buildNotes(t) {
+  const note = typeof t.note === "string" ? t.note : "";
+  const consultants = normalizePeople(t.consultant);
+  if (consultants.length === 0) return note;
+  const line = `\u987E\u95EE\u4EBA\uFF1A${formatPeople(consultants)}`;
+  return note.trim() === "" ? line : `${note}
+${line}`;
+}
 function exportFileName(plan, format) {
   const safeName = (plan.name || "\u672A\u547D\u540D\u8BA1\u5212").replace(/[\\/:*?"<>|]/g, "_");
   const ext = format === "mspdi" ? "xml" : "csv";
@@ -49031,8 +49078,9 @@ function toMsProjectXml(plan, sched, cal = NATURAL_CALENDAR) {
     if (typeof t.progress === "number") {
       te.ele("PercentComplete").txt(String(Math.max(0, Math.min(100, Math.round(t.progress))))).up();
     }
-    if (t.note && t.note.trim() !== "") {
-      te.ele("Notes").txt(t.note).up();
+    const notes = buildNotes(t);
+    if (notes !== "") {
+      te.ele("Notes").txt(notes).up();
     }
     let constraintType = 0;
     let constraintDate = null;
@@ -49068,10 +49116,11 @@ function toMsProjectXml(plan, sched, cal = NATURAL_CALENDAR) {
   const usedOwners = [];
   const seenOwner = /* @__PURE__ */ new Set();
   for (const t of tasks) {
-    const o = t.owner?.trim();
-    if (o && !seenOwner.has(o)) {
-      seenOwner.add(o);
-      usedOwners.push(o);
+    for (const o of normalizePeople(t.owner)) {
+      if (!seenOwner.has(o)) {
+        seenOwner.add(o);
+        usedOwners.push(o);
+      }
     }
   }
   const resUidOf = /* @__PURE__ */ new Map();
@@ -49091,23 +49140,38 @@ function toMsProjectXml(plan, sched, cal = NATURAL_CALENDAR) {
   const assignmentsEle = doc.ele("Assignments");
   let assignUid = 1;
   for (const t of tasks) {
-    const o = t.owner?.trim();
-    if (!o) continue;
-    const resUid = resUidOf.get(o);
     const taskUid = uidOf.get(t.id);
-    if (resUid === void 0 || taskUid === void 0) continue;
-    const ae = assignmentsEle.ele("Assignment");
-    ae.ele("UID").txt(String(assignUid++)).up();
-    ae.ele("TaskUID").txt(String(taskUid)).up();
-    ae.ele("ResourceUID").txt(String(resUid)).up();
-    ae.ele("Units").txt("100").up();
-    ae.ele("PercentWorkComplete").txt("0").up();
-    ae.up();
+    if (taskUid === void 0) continue;
+    for (const o of normalizePeople(t.owner)) {
+      const resUid = resUidOf.get(o);
+      if (resUid === void 0) continue;
+      const ae = assignmentsEle.ele("Assignment");
+      ae.ele("UID").txt(String(assignUid++)).up();
+      ae.ele("TaskUID").txt(String(taskUid)).up();
+      ae.ele("ResourceUID").txt(String(resUid)).up();
+      ae.ele("Units").txt("100").up();
+      ae.ele("PercentWorkComplete").txt("0").up();
+      ae.up();
+    }
   }
   assignmentsEle.up();
   return doc.end({ prettyPrint: true });
 }
-var CSV_HEADER = ["\u884C\u53F7", "\u4EFB\u52A1ID", "\u5C42\u7EA7", "\u4EFB\u52A1\u540D\u79F0(\u7F29\u8FDB)", "\u7236\u4EFB\u52A1ID", "\u5F00\u59CB", "\u7ED3\u675F", "\u65F6\u957F", "\u4F9D\u8D56", "\u8D1F\u8D23\u4EBA", "\u6765\u6E90", "\u5907\u6CE8"];
+var CSV_HEADER = [
+  "\u884C\u53F7",
+  "\u4EFB\u52A1ID",
+  "\u5C42\u7EA7",
+  "\u4EFB\u52A1\u540D\u79F0(\u7F29\u8FDB)",
+  "\u7236\u4EFB\u52A1ID",
+  "\u5F00\u59CB",
+  "\u7ED3\u675F",
+  "\u65F6\u957F",
+  "\u4F9D\u8D56",
+  "\u8D1F\u8D23\u4EBA",
+  "\u987E\u95EE\u4EBA",
+  "\u6765\u6E90",
+  "\u5907\u6CE8"
+];
 function csvCell(value) {
   const s = value === null || value === void 0 ? "" : String(value);
   if (/[",\n\r]/.test(s)) {
@@ -49133,7 +49197,9 @@ function toCsv(plan, sched) {
         csvCell(c.end),
         csvCell(formatDuration(c.duration)),
         csvCell(formatDepsExpr(t.deps, idToSeq)),
-        csvCell(t.owner ?? ""),
+        // 人员列可多人 → 顿号拼接（与表格单元格展示一致）
+        csvCell(formatPeople(normalizePeople(t.owner))),
+        csvCell(formatPeople(normalizePeople(t.consultant))),
         csvCell(c.derivedFrom),
         csvCell(t.note ?? "")
       ].join(",")
@@ -49435,7 +49501,7 @@ function toPlan(result) {
     }).filter((d) => d !== null);
     const parentUid = resolveParentUid(t);
     const parentId = parentUid ? ourIdOf.get(parentUid) ?? null : null;
-    const owner = typeof t.owner === "string" && t.owner.trim() !== "" ? t.owner.trim() : "";
+    const owner = typeof t.owner === "string" && t.owner.trim() !== "" ? [t.owner.trim()] : [];
     const note = typeof t.note === "string" && t.note.trim() !== "" ? t.note.trim() : void 0;
     const progress = typeof t.progress === "number" && Number.isFinite(t.progress) ? Math.max(0, Math.min(100, Math.round(t.progress))) : void 0;
     const task = {
@@ -49445,9 +49511,11 @@ function toPlan(result) {
       parentId: parentId && parentId !== id ? parentId : null,
       input: { start, end, duration: null },
       deps,
-      collapsed: false
+      collapsed: false,
+      // 人员字段恒为数组（normalizePlan 会再归一化一次）
+      owner,
+      consultant: []
     };
-    if (owner) task.owner = owner;
     if (note) task.note = note;
     if (progress !== void 0) task.progress = progress;
     return task;

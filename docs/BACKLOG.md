@@ -2,6 +2,25 @@
 
 > 待办/延迟项清单。优先级：P0 最高。标注「本次已落地」的为已完成项，供追溯。
 
+## 本次已落地（2026-09-03 · U02 顾问人 + 多人）
+- [x] **新增「顾问人」列**：固定在「负责人」右侧、「操作」左侧，表格 8 列 → 9 列；两列共用同一套候选名单与录入控件。
+- [x] **负责人 / 顾问人支持多人**：`Task.owner` 由 `string` → `string[]`，新增 `Task.consultant: string[]`；**归一化即迁移**（`normalizePlan()` 把历史字符串自动拆数组，缺失 consultant 补 `[]`），不做 schemaVersion 升级、无需数据脚本。
+- [x] **人员字段单一真源 `shared/people.ts`**：`normalizePeople`（trim / 去空 / 按 `,，、;；|/` 拆 / 大小写不敏感去重保留首次写法 / 脏数据降级）、`formatPeople`（顿号拼接）、`peopleOf` / `collectPeople`。
+- [x] **多人录入交互**（用户裁定：可搜索多选下拉）：MUI `Autocomplete` 开 `multiple` + `freeSolo` + `disableCloseOnSelect`（连选不关下拉）+ 已选项打勾 + Chips；编辑态为**绝对定位浮层**（248–420px / max-height 104），**行高恒 32px**；增删即时落库，不依赖失焦。
+- [x] **导出语义**（用户裁定：顾问人只作为 notes，不计入 resource）：MSPDI 里负责人多人**各自生成 Resource + Assignment**，顾问人只进 `<Notes>`（`顾问人：A、B`）；CSV 新增「顾问人」列（表头 12 → 13 项），人员用顿号拼接。MPP 导入资源名包成单元素数组。
+- [x] **列宽存储 v2 → v3（按列名对象）**：新增列会让旧「按下标数组」语义错位（原第 8 项「操作 136」被顶到顾问人列）。改为 `{"seq":52,"name":465,…}` 按列名存取 + `LEGACY_LAYOUT` 固化 v1/v2 时代 8 列序作迁移依据；降级链 v3 → v2 → v1 → 默认，**迁移只读不写**。
+- [x] **文档**：`docs/prd_increment_consultant_multi.md`、`docs/design_increment_consultant_multi.md`。
+- **质量门禁**：`tsc --noEmit` 0 错误；全量单测 16 套件 **312 passed / 0 failed**（282 → 309 → 312）。
+- **真实浏览器实测**（Chromium / Project-A v2 + 新建测试计划）：9 列列序正确；磁盘上历史字符串 owner（User05 / User01 / User06 / User04 / User03）打开后正常显示；负责人连选 → `User05、User01、User13`、顾问人 → `User02、User03` 且互不影响；编辑中/选多人后/关闭后行高均 32；Esc 残留编辑器 0；保存 → 重载持久化，落盘为 `owner=['User01','User13'] consultant=['User02','User03']`；**0 控制台错误**。
+
+### 过程中修的缺陷（非需求，但阻塞使用）
+- [x] **Esc 关不掉人员编辑器**：MUI `useAutocomplete` 在 Escape 分支里 `stopPropagation()`，React 事件委托在 root，挂在包装 div 上的 `onKeyDown` 收不到 → 只能靠失焦关闭。改为**捕获阶段原生监听**。已补回归用例（`people-cell.test.tsx`，禁用监听后该用例确实失败，确认能抓到）。
+- [x] **点任意单元格表格横向猛跳 314px**：选中行用 `scrollIntoView({block:'nearest'})`，默认 `inline:'nearest'` 在**行宽 > 面板宽度**时会横向对齐边缘（新增顾问人列后表格更宽，必现）。改为只改 `scrollTop`（并让开 sticky 表头高度），横向位置保持用户所选。
+- [x] **服务端 bundle 未重打导致人员丢失**：只跑 `vite build` 时 `server-build/server.cjs` 仍是旧 `normalizePlan()`（`typeof t.owner === 'string'` 才保留）→ 数组型 owner 被静默丢弃、consultant 直接没有，保存后重载人员全空且**无任何报错**。已 `./build-server-bundle.sh` 重打。→ 教训写入 `docs/LESSON_LEARN.md` §7.15。
+
+### 遗留（测试产物，待用户确认是否清理）
+- 本机 `data/plans/` 下有两个验证用计划「U02-验证-顾问人」（`p-20260903-162245-836d` 0 行、`p-20260903-162312-e80e` 1 行 v3），出现在计划列表里。**未擅自删除**，等确认。
+
 ## 本次已落地（2026-08-26 ~ 08-28）
 - [x] **MPP 导入（本机 Mac + Java）**：`server/MppImport.java` 桥接 + `server/mppImport.ts` 映射 + `POST /plans/import` + 前端「导入」按钮 + 能力门 501。
 - [x] **gated 集成测试**：`mpp-import.integration.test.ts`（无 Java 自动 skip），含 MSPDI 真实 fixture。

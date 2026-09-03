@@ -26,7 +26,11 @@ export type DeriveSource = 'INPUT' | 'DEP' | 'ROLLUP' | 'ANCHOR' | 'MIXED';
 
 export type Level = 'error' | 'warn';
 
-export type TaskField = 'start' | 'end' | 'duration' | 'deps' | 'name' | 'owner';
+/**
+ * 可编辑的单元格字段（文本类，走 `updateCell(taskId, field, value: string)`）。
+ * ⚠️ 人员字段（负责人 / 顾问人）是 string[]，不走这里，改走 `updatePeople(taskId, field, names)`。
+ */
+export type TaskField = 'start' | 'end' | 'duration' | 'deps' | 'name';
 
 /* ========================= 领域模型 ========================= */
 
@@ -86,8 +90,17 @@ export interface Task {
   computed?: TaskComputed;
   collapsed?: boolean;
   note?: string;
-  /** 扩展位 */
-  owner?: string;
+  /**
+   * 负责人（可多人）。
+   * ⚠️ 2026-09-03 起由 `string` 升级为 `string[]`；历史字符串由 `normalizePlan()` 自动迁移，无需手工处理。
+   * 恒为数组（可能为空数组），业务侧不要再判 `Array.isArray`。
+   */
+  owner?: string[];
+  /**
+   * 顾问人（可多人，2026-09-03 新增）。
+   * 与 owner 同构；导出时按用户裁定只写进 Notes，不生成 MS Project 的 Resource / Assignment。
+   */
+  consultant?: string[];
   /** 扩展位 0-100 */
   progress?: number;
 }

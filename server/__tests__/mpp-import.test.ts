@@ -55,14 +55,17 @@ describe('toPlan 字段映射', () => {
     expect(dep.raw).toBe('FS+1d');
   });
 
-  it('owner / progress 透传，空值不写', () => {
-    expect(tasks[0].owner).toBe('Alice');
+  it('owner 透传（人员字段恒为数组）；progress 空值不写', () => {
+    // MPP 资源名升级为数组：单人 → 单元素数组
+    expect(tasks[0].owner).toEqual(['Alice']);
     expect(tasks[0].progress).toBe(50);
-    expect(tasks[1].owner).toBe('Bob');
+    expect(tasks[1].owner).toEqual(['Bob']);
     expect(tasks[1].progress).toBe(100);
-    expect(tasks[2].owner).toBeUndefined();
+    // 无资源的任务：人员字段仍存在，只是空数组（normalizePlan 的落地不变量）
+    expect(tasks[2].owner).toEqual([]);
+    expect(tasks[2].consultant).toEqual([]);
     expect(tasks[2].progress).toBe(0); // 任务B progress=0 是合法值，应保留
-    expect(tasks[3].owner).toBeUndefined();
+    expect(tasks[3].owner).toEqual([]);
     expect(tasks[3].progress).toBeUndefined(); // 阶段二 progress=null → 不写
   });
 

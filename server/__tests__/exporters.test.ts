@@ -176,7 +176,7 @@ describe('d·exporters · CSV', () => {
   });
 
   it('含表头与任务名（中文）、依赖表达式、来源', () => {
-    expect(csv).toContain('行号,任务ID,层级,任务名称(缩进),父任务ID,开始,结束,时长,依赖,负责人,来源,备注');
+    expect(csv).toContain('行号,任务ID,层级,任务名称(缩进),父任务ID,开始,结束,时长,依赖,负责人,顾问人,来源,备注');
     expect(csv).toContain('前置');
     expect(csv).toContain('1FS'); // 依赖表达式
     expect(csv).toContain('DEP'); // 来源列

@@ -208,6 +208,35 @@ body.pg-resizing * {
   user-select: none !important;
 }
 
+/* -------- 人员单元格（负责人 / 顾问人）多选编辑器 --------
+   列宽默认 120px，塞不下多选标签，所以编辑态改用绝对定位浮层：
+   不占文档流 → 不撑高行（K16 行高恒 32px）；溢出方向朝右/朝下覆盖邻格与下方行。
+   前提：编辑态给单元格加 .pg-cell--people-editing 放开 overflow，否则浮层会被裁掉。 */
+.pg-cell--people {
+  position: relative;
+}
+
+.pg-cell--people-editing {
+  overflow: visible;
+  z-index: 20;
+}
+
+.pg-people-editor {
+  position: absolute;
+  left: 4px;
+  top: 2px;
+  min-width: 248px;
+  max-width: 420px;
+  max-height: 104px;
+  overflow-y: auto;
+  z-index: 30;
+  background: #fff;
+  border: 1px solid #2563eb;
+  border-radius: 4px;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.16);
+  padding: 1px 4px 2px;
+}
+
 /* ============================================================
    甘特
    ============================================================ */

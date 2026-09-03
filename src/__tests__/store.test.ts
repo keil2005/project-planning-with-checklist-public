@@ -11,7 +11,7 @@ import { useStore } from '../store';
 
 function makePlan(): Plan {
   const t = createEmptyTask('T-0001', 1, null, '任务A');
-  t.owner = '';
+  t.owner = [];
   return normalizePlan({
     schemaVersion: SCHEMA_VERSION,
     planId: 'p-store',
@@ -37,37 +37,80 @@ describe('f·store owner 动作', () => {
     const plan = useStore.getState().plan!;
     const added = plan.tasks.find((t) => t.id === 'T-0002');
     expect(added).toBeDefined();
-    expect(added!.owner).toBe('');
+    expect(added!.owner).toEqual([]);
+    expect(added!.consultant).toEqual([]);
     expect(useStore.getState().dirty).toBe(true);
   });
 
-  it('updateCell owner：去首尾空格、保留中间空格、不改大小写、自由文本合法', () => {
+  it('updatePeople owner：trim、保留中间空格、不归一大小写、自由文本合法', () => {
     useStore.setState({ plan: makePlan() });
     const st = useStore.getState();
 
-    st.updateCell('T-0001', 'owner', ' User01 ');
-    expect(useStore.getState().plan!.tasks[0].owner).toBe('User01');
+    st.updatePeople('T-0001', 'owner', [' User01 ']);
+    expect(useStore.getState().plan!.tasks[0].owner).toEqual(['User01']);
 
     // 保留中间空格（Group A 原样）
-    st.updateCell('T-0001', 'owner', 'Group A');
-    expect(useStore.getState().plan!.tasks[0].owner).toBe('Group A');
+    st.updatePeople('T-0001', 'owner', ['Group A']);
+    expect(useStore.getState().plan!.tasks[0].owner).toEqual(['Group A']);
 
-    // 不归一大小写：手填 user01 原样保存
-    st.updateCell('T-0001', 'owner', 'user01');
-    expect(useStore.getState().plan!.tasks[0].owner).toBe('user01');
+    // 不归一大小写：手填 user01 原样保存（但不会与已存在的 User01 重复共存）
+    st.updatePeople('T-0001', 'owner', ['user01']);
+    expect(useStore.getState().plan!.tasks[0].owner).toEqual(['user01']);
 
     // 名单外自由文本合法保存，不报错
-    st.updateCell('T-0001', 'owner', '外部张三');
-    expect(useStore.getState().plan!.tasks[0].owner).toBe('外部张三');
+    st.updatePeople('T-0001', 'owner', ['外部张三']);
+    expect(useStore.getState().plan!.tasks[0].owner).toEqual(['外部张三']);
 
-    // 仅改 owner 即置脏
+    // 仅改人员即置脏
     expect(useStore.getState().dirty).toBe(true);
   });
 
-  it('清空 owner（空串）后值为空串', () => {
+  it('updatePeople owner：多人按录入顺序保存，去重大小写不敏感', () => {
     useStore.setState({ plan: makePlan() });
-    useStore.getState().updateCell('T-0001', 'owner', 'User02');
-    useStore.getState().updateCell('T-0001', 'owner', '   ');
-    expect(useStore.getState().plan!.tasks[0].owner).toBe('');
+    const st = useStore.getState();
+
+    st.updatePeople('T-0001', 'owner', ['User01', 'User13', 'User02']);
+    expect(useStore.getState().plan!.tasks[0].owner).toEqual(['User01', 'User13', 'User02']);
+
+    // 一次提交内的大小写重复会折叠，保留首次出现的写法
+    st.updatePeople('T-0001', 'owner', ['User01', 'user01', 'User02']);
+    expect(useStore.getState().plan!.tasks[0].owner).toEqual(['User01', 'User02']);
+
+    // 空串 / 纯空白被丢弃
+    st.updatePeople('T-0001', 'owner', ['User01', '  ', '']);
+    expect(useStore.getState().plan!.tasks[0].owner).toEqual(['User01']);
+  });
+
+  it('updatePeople consultant：与 owner 各自独立', () => {
+    useStore.setState({ plan: makePlan() });
+    const st = useStore.getState();
+
+    st.updatePeople('T-0001', 'owner', ['User01']);
+    st.updatePeople('T-0001', 'consultant', ['User13', 'User02']);
+    const t = useStore.getState().plan!.tasks[0];
+    expect(t.owner).toEqual(['User01']);
+    expect(t.consultant).toEqual(['User13', 'User02']);
+
+    // 清掉顾问人不动负责人
+    st.updatePeople('T-0001', 'consultant', []);
+    expect(useStore.getState().plan!.tasks[0].owner).toEqual(['User01']);
+    expect(useStore.getState().plan!.tasks[0].consultant).toEqual([]);
+  });
+
+  it('updatePeople：重复写入相同内容是幂等的（值稳定、不报错）', () => {
+    useStore.setState({ plan: makePlan() });
+    useStore.getState().updatePeople('T-0001', 'owner', ['User01', 'User02']);
+    const first = useStore.getState().plan!.tasks[0].owner;
+    expect(() => useStore.getState().updatePeople('T-0001', 'owner', ['User01', 'User02'])).not.toThrow();
+    const second = useStore.getState().plan!.tasks[0].owner;
+    expect(second).toEqual(first);
+    expect(second).toEqual(['User01', 'User02']);
+  });
+
+  it('清空 owner（空数组）后值为空数组', () => {
+    useStore.setState({ plan: makePlan() });
+    useStore.getState().updatePeople('T-0001', 'owner', ['User02']);
+    useStore.getState().updatePeople('T-0001', 'owner', []);
+    expect(useStore.getState().plan!.tasks[0].owner).toEqual([]);
   });
 });
