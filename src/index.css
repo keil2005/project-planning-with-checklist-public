@@ -156,6 +156,59 @@ body {
 }
 
 /* ============================================================
+   表头列宽调整（U01）
+   ============================================================ */
+
+/* 表头单元格：为分隔条提供定位上下文 */
+.pg-th {
+  position: relative;
+  user-select: none;
+}
+
+/* 列标题过长时省略，避免把分隔条挤出可视区 */
+.pg-th-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 分隔条：贴在单元格右缘，7px 命中区，默认隐形、hover 显蓝线 */
+.pg-col-resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 7px;
+  height: 100%;
+  z-index: 2;
+  cursor: col-resize;
+  background: transparent;
+}
+
+.pg-col-resizer::after {
+  content: '';
+  position: absolute;
+  top: 20%;
+  bottom: 20%;
+  right: 2px;
+  width: 2px;
+  border-radius: 1px;
+  background: transparent;
+  transition: background 0.1s ease;
+}
+
+.pg-col-resizer:hover::after,
+.pg-col-resizer--active::after {
+  background: #2563eb;
+}
+
+/* 拖拽期间全局锁定 col-resize 光标，并禁掉选中（否则会划选表头文字） */
+body.pg-resizing,
+body.pg-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
+/* ============================================================
    甘特
    ============================================================ */
 .pg-scroll {
