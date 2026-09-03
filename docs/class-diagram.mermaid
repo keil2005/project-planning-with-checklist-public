@@ -1,0 +1,283 @@
+classDiagram
+    direction LR
+
+    %% ==================== 领域数据模型 (shared/types.ts) ====================
+    class Plan {
+        +int schemaVersion
+        +string planId
+        +string name
+        +int version
+        +string createdAt
+        +string updatedAt
+        +string updatedBy
+        +int nextTaskSeq
+        +CalendarConfig calendar
+        +List~Task~ tasks
+    }
+
+    class Task {
+        +string id
+        +int seq
+        +string name
+        +string parentId
+        +TaskInput input
+        +List~Dependency~ deps
+        +TaskComputed computed
+        +bool collapsed
+        +string note
+    }
+
+    class TaskInput {
+        +ISODate start
+        +ISODate end
+        +string duration
+    }
+
+    class TaskComputed {
+        +ISODate start
+        +ISODate end
+        +Duration duration
+        +DeriveSource derivedFrom
+        +FieldSources fieldSources
+        +bool isParent
+        +int depth
+        +bool hasError
+    }
+
+    class Dependency {
+        +string predecessorId
+        +DepType type
+        +Duration lag
+        +int lagSign
+        +string raw
+    }
+
+    class Duration {
+        +int value
+        +DurationUnit unit
+    }
+
+    class CalendarConfig {
+        +string mode
+        +ISODate anchorDate
+        +string defaultDuration
+    }
+
+    class Diagnostic {
+        +Level level
+        +ErrCode code
+        +string taskId
+        +string field
+        +string message
+    }
+
+    class VersionEntry {
+        +int version
+        +string timestamp
+        +string editor
+        +string notes
+        +Plan planSnapshot
+    }
+
+    class HistoryFile {
+        +int schemaVersion
+        +string planId
+        +List~VersionEntry~ versions
+    }
+
+    class LockState {
+        +string planId
+        +string status
+        +string holder
+        +string lockToken
+        +int since
+        +int lastHeartbeatAt
+        +int expiresAt
+    }
+
+    Plan "1" *-- "0..*" Task : tasks
+    Plan "1" *-- "1" CalendarConfig
+    Task "1" *-- "1" TaskInput : 用户录入(唯一真源)
+    Task "1" *-- "0..1" TaskComputed : 排程结果(派生)
+    Task "1" *-- "0..*" Dependency : deps
+    Task "0..1" --o "0..*" Task : parentId(自引用树)
+    Dependency ..> Task : predecessorId
+    Dependency "1" *-- "0..1" Duration : lag
+    TaskComputed "1" *-- "1" Duration
+    HistoryFile "1" *-- "1..*" VersionEntry
+    VersionEntry "1" *-- "1" Plan : planSnapshot
+
+    %% ==================== 共享算法层 (shared/) ====================
+    class DateTimeUtil {
+        <<module>>
+        +parseISODate(s) Dayjs
+        +formatISODate(d) ISODate
+        +parseDuration(text) Duration
+        +formatDuration(d) string
+        +addDuration(date, dur, sign) ISODate
+        +subDuration(date, dur) ISODate
+        +diffDays(a, b) int
+        +diffDuration(start, end) Duration
+        +maxDate(dates) ISODate
+        +minDate(dates) ISODate
+        +lagToDays(lag, anchor) int
+    }
+
+    class Scheduler {
+        <<module>>
+        +parseDepsExpr(raw, seqToId) ParseResult
+        +formatDepsExpr(deps, idToSeq) string
+        +schedule(plan, opts) ScheduleResult
+        -buildGraph(plan) Graph
+        -topoSort(graph) SortResult
+        -findCycle(graph) List~string~
+        -resolveLeaf(task, ctx) TaskComputed
+        -rollupParent(task, children) TaskComputed
+        -validateConflicts(task, ctx) List~Diagnostic~
+    }
+
+    class ScheduleResult {
+        +Map~string_TaskComputed~ computed
+        +List~Diagnostic~ diagnostics
+        +List~string~ order
+        +ISODate projectStart
+        +ISODate projectEnd
+    }
+
+    Scheduler ..> DateTimeUtil : uses
+    Scheduler ..> Plan : reads input
+    Scheduler --> ScheduleResult : returns
+    ScheduleResult "1" *-- "0..*" Diagnostic
+
+    %% ==================== 服务端 (server/) ====================
+    class ServerConfig {
+        <<module>>
+        +int port
+        +string dataDir
+        +string usersFile
+        +LockCfg lock
+        +load() ServerConfig
+        +planDir(planId) string
+    }
+
+    class PlanRepository {
+        +listPlans() List~PlanMeta~
+        +createPlan(name, editor, notes) Plan
+        +readPlan(planId) Plan
+        +writePlan(plan) void
+        +exists(planId) bool
+        -atomicWriteJson(path, obj) void
+        -nextTaskId(plan) string
+    }
+
+    class HistoryRepository {
+        +readHistoryMeta(planId) List~VersionMeta~
+        +readVersion(planId, version) VersionEntry
+        +appendVersion(planId, plan, editor, notes) VersionEntry
+        -nextVersion(planId) int
+    }
+
+    class LockService {
+        -Map~string_LockState~ locks
+        +status(planId) LockState
+        +acquire(planId, user) LockState
+        +heartbeat(planId, user, token) LockState
+        +release(planId, user, token) void
+        +assertHolder(planId, user, token) void
+        +startSweeper(intervalMs) void
+    }
+
+    class Exporters {
+        <<module>>
+        +toMsProjectXml(plan, computed) string
+        +toCsv(plan, computed) string
+        -depTypeToLinkType(type) int
+        -lagToTenthMinutes(lag, anchor) int
+    }
+
+    class ApiRouter {
+        <<express>>
+        +getUsers() GET_api_users
+        +listPlans() GET_api_plans
+        +createPlan() POST_api_plans
+        +getPlan() GET_api_plans_id
+        +savePlan() PUT_api_plans_id
+        +getHistory() GET_history
+        +getVersion() GET_history_version
+        +restore() POST_restore
+        +exportPlan() GET_export
+        +lockStatus() GET_locks_id
+        +acquireLock() POST_acquire
+        +heartbeat() POST_heartbeat
+        +releaseLock() POST_release
+        +health() GET_api_health
+    }
+
+    ApiRouter ..> PlanRepository
+    ApiRouter ..> HistoryRepository
+    ApiRouter ..> LockService
+    ApiRouter ..> Exporters
+    ApiRouter ..> Scheduler : 保存前重算+校验
+    PlanRepository ..> ServerConfig
+    HistoryRepository ..> ServerConfig
+    LockService ..> ServerConfig
+    Exporters ..> DateTimeUtil
+    HistoryRepository ..> HistoryFile : 读写 history.json
+    PlanRepository ..> Plan : 读写 plan.json
+
+    %% ==================== 前端 (src/) ====================
+    class ApiClient {
+        <<module>>
+        +getUsers() List~string~
+        +listPlans() List~PlanMeta~
+        +createPlan(name, editor, notes) Plan
+        +getPlan(planId) Plan
+        +savePlan(planId, plan, editor, notes, token, baseVersion) SaveResp
+        +getHistory(planId) List~VersionMeta~
+        +getVersion(planId, v) VersionEntry
+        +restore(planId, v, editor, notes, token) Plan
+        +lockStatus(planId) LockState
+        +acquireLock(planId, user) LockState
+        +heartbeat(planId, user, token) LockState
+        +releaseLock(planId, user, token) void
+        +exportUrl(planId, format) string
+    }
+
+    class PlanStore {
+        <<zustand>>
+        +Plan plan
+        +ScheduleResult schedule
+        +Session session
+        +LockState lock
+        +bool dirty
+        +setUser(name) void
+        +openPlan(planId) void
+        +recompute() void
+        +updateCell(taskId, field, value) void
+        +addRow(afterTaskId) void
+        +deleteRow(taskId) void
+        +indent(taskId) void
+        +outdent(taskId) void
+        +moveRow(taskId, delta) void
+        +enterEditMode() void
+        +exitEditMode() void
+        +save(notes) void
+    }
+
+    class App
+    class Toolbar
+    class TaskTable
+    class GanttChart
+    class Dialogs
+
+    PlanStore ..> ApiClient
+    PlanStore ..> Scheduler : 本地实时重算
+    App --> Toolbar
+    App --> TaskTable
+    App --> GanttChart
+    App --> Dialogs
+    Toolbar ..> PlanStore
+    TaskTable ..> PlanStore
+    GanttChart ..> PlanStore
+    Dialogs ..> PlanStore
+    ApiClient ..> ApiRouter : HTTP /api

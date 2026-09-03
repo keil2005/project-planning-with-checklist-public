@@ -1,0 +1,10 @@
+node_modules/
+dist/
+data/
+.workbuddy/
+*.log
+.DS_Store
+
+# MPXJ 桥接（仅本机 Java 环境；Windows 零配置共享包不含此目录，导入自动 501）
+server/mpxj/lib/
+server/mpxj/*.class

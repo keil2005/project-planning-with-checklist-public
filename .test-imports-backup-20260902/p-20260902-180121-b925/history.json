@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "planId": "p-20260902-180121-b925",
+  "versions": [
+    {
+      "version": 1,
+      "timestamp": "2026-09-02T10:01:21.906Z",
+      "editor": "User01",
+      "notes": "导入自 smoke_test.xml",
+      "planSnapshot": {
+        "schemaVersion": 1,
+        "planId": "p-20260902-180121-b925",
+        "name": "MPXJ 桥接自检",
+        "version": 1,
+        "createdAt": "2026-09-02T10:01:21.905Z",
+        "updatedAt": "2026-09-02T10:01:21.906Z",
+        "updatedBy": "User01",
+        "nextTaskSeq": 4,
+        "calendar": {
+          "mode": "WORKWEEK5",
+          "holidays": [],
+          "anchorDate": "2026-09-02",
+          "defaultDuration": "1d"
+        },
+        "tasks": [
+          {
+            "id": "T-0001",
+            "seq": 1,
+            "name": "需求评审",
+            "parentId": null,
+            "input": {
+              "start": "2026-01-01",
+              "end": "2026-01-04",
+              "duration": null
+            },
+            "deps": [],
+            "collapsed": false,
+            "note": "第一阶段",
+            "owner": "User01",
+            "progress": 100
+          },
+          {
+            "id": "T-0002",
+            "seq": 2,
+            "name": "原理图设计",
+            "parentId": null,
+            "input": {
+              "start": "2026-01-06",
+              "end": "2026-01-17",
+              "duration": null
+            },
+            "deps": [
+              {
+                "predecessorId": "T-0001",
+                "type": "FS",
+                "lag": null,
+                "lagSign": 1,
+                "raw": "FS"
+              }
+            ],
+            "collapsed": false,
+            "owner": "User13",
+            "progress": 40
+          },
+          {
+            "id": "T-0003",
+            "seq": 3,
+            "name": "PCB Layout",
+            "parentId": null,
+            "input": {
+              "start": "2026-01-19",
+              "end": "2026-02-07",
+              "duration": null
+            },
+            "deps": [
+              {
+                "predecessorId": "T-0002",
+                "type": "FS",
+                "lag": null,
+                "lagSign": 1,
+                "raw": "FS"
+              }
+            ],
+            "collapsed": false,
+            "progress": 0
+          }
+        ]
+      }
+    }
+  ]
+}

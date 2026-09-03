@@ -1,0 +1,135 @@
+sequenceDiagram
+    autonumber
+    actor U as 用户(浏览器)
+    participant App as App.tsx
+    participant TB as Toolbar
+    participant TT as TaskTable
+    participant GC as GanttChart
+    participant DLG as Dialogs
+    participant ST as PlanStore(zustand)
+    participant SC as shared/scheduler
+    participant API as src/api.ts
+    participant RT as server/routes.ts
+    participant LK as LockService
+    participant PR as PlanRepository
+    participant HR as HistoryRepository
+    participant EX as Exporters
+    participant FS as DATA_DIR(文件系统)
+
+    %% ---------- 1. 启动 / 选择身份 / 打开计划 ----------
+    U->>App: 打开页面
+    App->>ST: init()
+    ST->>API: getUsers()
+    API->>RT: GET /api/users
+    RT->>FS: read config/users.json
+    FS-->>RT: ["Alice","Bob","Carol"]
+    RT-->>API: {code:0,data:[...]}
+    API-->>ST: users
+    ST->>DLG: 打开 UserGateDialog(必选)
+    U->>DLG: 选择 "Alice"
+    DLG->>ST: setUser("Alice")
+    ST->>API: listPlans()
+    API->>RT: GET /api/plans
+    RT->>PR: listPlans()
+    PR->>FS: scan DATA_DIR/plans/*/plan.json
+    FS-->>PR: PlanMeta[]
+    PR-->>RT: PlanMeta[]
+    RT-->>ST: 计划列表
+    U->>DLG: 选择计划 / 新建计划
+    ST->>API: getPlan(planId)
+    API->>RT: GET /api/plans/:id
+    RT->>PR: readPlan(planId)
+    PR->>FS: read plan.json
+    FS-->>PR: Plan
+    PR-->>RT: Plan
+    RT-->>ST: Plan(含已落盘 computed)
+    ST->>SC: schedule(plan)
+    SC-->>ST: {computed, diagnostics, order}
+    ST-->>TT: 渲染表格(缩进/灰显推算值)
+    ST-->>GC: 渲染甘特条 + 依赖箭头
+    Note over ST,API: 只读态: 每 5s 轮询 GET /api/locks/:id 与 plan.version
+
+    %% ---------- 2. 抢编辑锁 ----------
+    U->>TB: 点击「编辑」
+    TB->>ST: enterEditMode()
+    ST->>API: acquireLock(planId,"Alice")
+    API->>RT: POST /api/locks/:id/acquire
+    RT->>LK: acquire(planId,"Alice")
+    alt 锁空闲(IDLE)
+        LK-->>RT: {status:EDITING, holder:"Alice", lockToken:tk1, expiresAt}
+        RT-->>ST: code:0
+        ST-->>TB: 进入编辑态(其他用户按钮置灰)
+        loop 每 10s(HEARTBEAT_MS)
+            ST->>API: heartbeat(planId,"Alice",tk1)
+            API->>RT: POST /api/locks/:id/heartbeat
+            RT->>LK: heartbeat() 刷新 lastHeartbeatAt
+            LK-->>ST: {expiresAt}
+        end
+    else 已被他人持有
+        LK-->>RT: throw ERR_LOCK_HELD(2001)
+        RT-->>ST: 409 {code:2001, data:{holder:"Bob"}}
+        ST-->>TB: 提示「Bob 正在编辑」并保持只读
+    end
+
+    %% ---------- 3. 编辑单元格 → 实时排程 ----------
+    U->>TT: 修改「开始」/「时长」/「依赖」/ 缩进
+    TT->>ST: updateCell(taskId, field, value)
+    ST->>SC: parseDepsExpr("2FS,5SS+2d", seq→id)
+    SC-->>ST: Dependency[] + 解析诊断
+    ST->>SC: schedule(plan)
+    Note over SC: 三选二推算 → 依赖驱动 → 父子 rollup
+    SC-->>ST: computed + diagnostics(error/warn)
+    ST-->>TT: 回填推算值(灰色斜体) + 单元格红/黄标记
+    ST-->>GC: 重绘条形 + SS/FS/FF 箭头(带偏移标注)
+
+    %% ---------- 4. 保存(notes 必填) → 版本快照 ----------
+    U->>TB: 点击「保存」
+    TB->>DLG: 打开 SaveNotesDialog
+    U->>DLG: 输入变更纪要
+    DLG->>DLG: notes.trim()==="" → 确认按钮 disabled
+    DLG->>ST: save(notes)
+    ST->>API: savePlan(planId, plan, "Alice", notes, tk1, baseVersion)
+    API->>RT: PUT /api/plans/:id
+    RT->>RT: 校验 notes 非空(1002) / baseVersion(3003)
+    RT->>LK: assertHolder(planId,"Alice",tk1)
+    LK-->>RT: ok(否则 2002/2003)
+    RT->>SC: schedule(plan) 服务端重算并校验
+    SC-->>RT: computed + diagnostics
+    alt 存在 error 级诊断
+        RT-->>ST: 400 {code:1001, data:{diagnostics}}
+        ST-->>DLG: 展示阻塞错误(循环依赖/超约束)
+    else 校验通过
+        RT->>HR: appendVersion(planId, plan, "Alice", notes)
+        HR->>FS: read history.json → version=N+1 → 原子写回
+        HR-->>RT: VersionEntry{version:N+1}
+        RT->>PR: writePlan({...plan, version:N+1, updatedAt, updatedBy})
+        PR->>FS: 写 plan.json.tmp → rename
+        RT-->>ST: {code:0, data:{plan, version:N+1}}
+        ST-->>TB: dirty=false, 版本号更新
+    end
+
+    %% ---------- 5. 心跳超时自动回收锁 ----------
+    Note over U,LK: 编辑者关页面 / 断网 → 心跳中断
+    loop 每 5s(SWEEP_MS)
+        LK->>LK: now-lastHeartbeatAt > 30s ? → status=IDLE(记录日志)
+    end
+    U->>TB: 其他用户轮询到 IDLE → 「编辑」按钮恢复可用
+
+    %% ---------- 6. 导出 / 历史版本 ----------
+    U->>TB: 导出 MS Project XML / CSV
+    TB->>API: exportUrl(planId, "mspdi") → window.open
+    API->>RT: GET /api/plans/:id/export?format=mspdi
+    RT->>PR: readPlan()
+    RT->>SC: schedule() 取权威 computed
+    RT->>EX: toMsProjectXml(plan, computed)
+    EX-->>RT: XML 字符串
+    RT-->>U: 200 application/xml + Content-Disposition(attachment)
+    U->>TB: 打开「变更记录」
+    TB->>API: getHistory(planId)
+    API->>RT: GET /api/plans/:id/history
+    RT->>HR: readHistoryMeta() 不含快照
+    HR-->>RT: VersionMeta[]
+    RT-->>DLG: 版本列表(版本号/时间/编辑者/notes)
+    U->>DLG: 预览 v3 → GET /history/3 (只读渲染)
+    U->>DLG: 回滚 v3 → POST /restore {version:3, notes}
+    RT->>HR: appendVersion(v3 快照内容) → 生成 N+1 新版本(append-only)

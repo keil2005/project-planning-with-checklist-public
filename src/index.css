@@ -1,0 +1,244 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   全局 CSS 变量（K16：表格与甘特共用行高常量 ROW_H = 32）
+   ============================================================ */
+:root {
+  --row-h: 32px;
+  --head-h: 36px;
+  --gantt-day-w: 24px;
+  --grid-line: #e2e8f0;
+  --grid-line-strong: #cbd5e1;
+  --cell-derived: #64748b;
+  --err: #dc2626;
+  --warn: #d97706;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', Roboto,
+    Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  color: #0f172a;
+  background: #f8fafc;
+  overflow: hidden;
+}
+
+/* ============================================================
+   表格
+   ============================================================ */
+.pg-row {
+  height: var(--row-h);
+  min-height: var(--row-h);
+  max-height: var(--row-h);
+  box-sizing: border-box;
+  display: grid;
+  align-items: center;
+  border-bottom: 1px solid var(--grid-line);
+}
+
+.pg-head {
+  height: var(--head-h);
+  min-height: var(--head-h);
+  box-sizing: border-box;
+  display: grid;
+  align-items: center;
+  background: #f1f5f9;
+  border-bottom: 1px solid var(--grid-line-strong);
+  font-weight: 600;
+  color: #334155;
+}
+
+.pg-cell {
+  padding: 0 6px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  border-right: 1px solid var(--grid-line);
+  height: 100%;
+  display: flex;
+  align-items: center;
+}
+
+.pg-input {
+  width: 100%;
+  height: 24px;
+  line-height: 24px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  padding: 0 4px;
+  font: inherit;
+  color: inherit;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.pg-input:hover:not(:disabled) {
+  border-color: #cbd5e1;
+}
+
+.pg-input:focus:not(:disabled) {
+  border-color: #2563eb;
+  background: #fff;
+}
+
+.pg-input:disabled {
+  color: var(--cell-derived);
+  cursor: not-allowed;
+}
+
+.pg-input--derived {
+  color: var(--cell-derived);
+  font-style: italic;
+}
+
+.pg-input--error {
+  border-color: var(--err) !important;
+  background: #fef2f2;
+}
+
+.pg-input--warn {
+  border-color: var(--warn) !important;
+  background: #fffbeb;
+}
+
+/* 开始/结束日期单元格：输入框 + 日历按钮同行，不撑破网格 */
+.pg-cell--date {
+  padding: 0 2px;
+}
+
+.pg-date-wrap {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 2px;
+}
+
+.pg-date-wrap .pg-input {
+  width: auto;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.pg-date-wrap > span {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.pg-cal-btn {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  color: #64748b;
+}
+
+.pg-cal-btn:hover:not(:disabled) {
+  color: #2563eb;
+}
+
+.pg-row--selected {
+  background: #eff6ff;
+}
+
+.pg-row--parent {
+  font-weight: 600;
+}
+
+/* ============================================================
+   甘特
+   ============================================================ */
+.pg-scroll {
+  overflow: auto;
+  height: 100%;
+  position: relative;
+}
+
+.pg-sticky-head {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: #f1f5f9;
+}
+
+.pg-gantt-svg {
+  display: block;
+  shape-rendering: crispEdges;
+}
+
+.pg-gantt-svg text {
+  font-size: 11px;
+  fill: #475569;
+  user-select: none;
+}
+
+.pg-bar {
+  cursor: pointer;
+}
+
+.pg-bar:hover {
+  filter: brightness(1.15);
+}
+
+/* ============================================================
+   工作日历横幅（T04）
+   ============================================================ */
+.pg-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--grid-line);
+}
+
+.pg-banner--ok {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.pg-banner--warn {
+  background: #fffbeb;
+  color: #b45309;
+}
+
+.pg-banner__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #10b981;
+  flex: none;
+}
+
+.pg-banner__dot--warn {
+  background: #f59e0b;
+}
+
+/* ============================================================
+   甘特：非工作日着色 + 图例（T06）
+   ============================================================ */
+.pg-gantt-svg .gantt-holiday {
+  fill: #fee2e2;
+}
+
+.pg-gantt-svg .gantt-makeup {
+  fill: #fff7ed;
+}
+
+.pg-gantt-svg .gantt-weekend {
+  fill: #f8fafc;
+}
+
+.pg-gantt-svg .gantt-makeup-strip {
+  fill: #f59e0b;
+}

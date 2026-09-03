@@ -1,0 +1,1162 @@
+{
+  "schemaVersion": 1,
+  "planId": "p-20260902-181204-9b91",
+  "versions": [
+    {
+      "version": 1,
+      "timestamp": "2026-09-02T10:12:04.435Z",
+      "editor": "User01",
+      "notes": "导入自 31Jul_highlevelplanning.mpp",
+      "planSnapshot": {
+        "schemaVersion": 1,
+        "planId": "p-20260902-181204-9b91",
+        "name": "31Jul_highlevelplanning",
+        "version": 1,
+        "createdAt": "2026-09-02T10:12:04.434Z",
+        "updatedAt": "2026-09-02T10:12:04.435Z",
+        "updatedBy": "User01",
+        "nextTaskSeq": 60,
+        "calendar": {
+          "mode": "WORKWEEK5",
+          "holidays": [],
+          "anchorDate": "2026-09-02",
+          "defaultDuration": "1d"
+        },
+        "tasks": [
+          {
+            "id": "T-0001",
+            "seq": 1,
+            "name": "31Jul_highlevelplanning",
+            "parentId": null,
+            "input": {
+              "start": "2026-06-03",
+              "end": "2027-08-18",
+              "duration": null
+            },
+            "deps": [],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0002",
+            "seq": 2,
+            "name": "Gates & Milestones",
+            "parentId": "T-0001",
+            "input": {
+              "start": "2026-06-03",
+              "end": "2027-07-22",
+              "duration": null
+            },
+            "deps": [],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0003",
+            "seq": 3,
+            "name": "PG1 Concept Agreement",
+            "parentId": "T-0002",
+            "input": {
+              "start": "2026-06-03",
+              "end": "2026-06-04",
+              "duration": null
+            },
+            "deps": [],
+            "collapsed": false,
+            "progress": 100
+          },
+          {
+            "id": "T-0004",
+            "seq": 4,
+            "name": "PG2 Design Release",
+            "parentId": "T-0002",
+            "input": {
+              "start": "2026-09-23",
+              "end": "2026-09-24",
+              "duration": null
+            },
+            "deps": [
+              {
+                "predecessorId": "T-0019",
+                "type": "FS",
+                "lag": null,
+                "lagSign": 1,
+                "raw": "FS"
+              }
+            ],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0005",
+            "seq": 5,
+            "name": "PG3 V&V Readiness",
+            "parentId": "T-0002",
+            "input": {
+              "start": "2026-11-18",
+              "end": "2026-11-19",
+              "duration": null
+            },
+            "deps": [
+              {
+                "predecessorId": "T-0026",
+                "type": "FS",
+                "lag": null,
+                "lagSign": 1,
+                "raw": "FS"
+              }
+            ],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0006",
+            "seq": 6,
+            "name": "PG4 Design Output",
+            "parentId": "T-0002",
+            "input": {
+              "start": "2027-04-01",
+              "end": "2027-04-02",
+              "duration": null
+            },
+            "deps": [
+              {
+                "predecessorId": "T-0039",
+                "type": "FS",
+                "lag": null,
+                "lagSign": 1,
+                "raw": "FS"
+              }
+            ],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0007",
+            "seq": 7,
+            "name": "PG5 Launch Readiness",
+            "parentId": "T-0002",
+            "input": {
+              "start": "2027-07-21",
+              "end": "2027-07-22",
+              "duration": null
+            },
+            "deps": [
+              {
+                "predecessorId": "T-0048",
+                "type": "FS",
+                "lag": null,
+                "lagSign": 1,
+                "raw": "FS"
+              }
+            ],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0009",
+            "seq": 8,
+            "name": "Phase 2",
+            "parentId": "T-0001",
+            "input": {
+              "start": "2026-06-29",
+              "end": "2026-09-24",
+              "duration": null
+            },
+            "deps": [],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0010",
+            "seq": 9,
+            "name": "UX/UI ",
+            "parentId": "T-0009",
+            "input": {
+              "start": "2026-08-14",
+              "end": "2026-08-28",
+              "duration": null
+            },
+            "deps": [],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0011",
+            "seq": 10,
+            "name": "High Fidelity WireFrames",
+            "parentId": "T-0010",
+            "input": {
+              "start": "2026-08-14",
+              "end": "2026-08-15",
+              "duration": null
+            },
+            "deps": [],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0012",
+            "seq": 11,
+            "name": "App Team & SW Team Estimations",
+            "parentId": "T-0010",
+            "input": {
+              "start": "2026-08-14",
+              "end": "2026-08-28",
+              "duration": null
+            },
+            "deps": [
+              {
+                "predecessorId": "T-0011",
+                "type": "FS",
+                "lag": null,
+                "lagSign": 1,
+                "raw": "FS"
+              }
+            ],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0013",
+            "seq": 12,
+            "name": "Development Areas",
+            "parentId": "T-0009",
+            "input": {
+              "start": "2026-06-29",
+              "end": "2026-09-19",
+              "duration": null
+            },
+            "deps": [],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0014",
+            "seq": 13,
+            "name": "Display (selection & proof of concept)",
+            "parentId": "T-0013",
+            "input": {
+              "start": "2026-06-29",
+              "end": "2026-09-19",
+              "duration": null
+            },
+            "deps": [
+              {
+                "predecessorId": "T-0003",
+                "type": "FS",
+                "lag": null,
+                "lagSign": 1,
+                "raw": "FS"
+              }
+            ],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0015",
+            "seq": 14,
+            "name": "PCBA",
+            "parentId": "T-0013",
+            "input": {
+              "start": "2026-08-10",
+              "end": "2026-09-19",
+              "duration": null
+            },
+            "deps": [
+              {
+                "predecessorId": "T-0003",
+                "type": "FS",
+                "lag": null,
+                "lagSign": 1,
+                "raw": "FS"
+              }
+            ],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0016",
+            "seq": 15,
+            "name": "Auto Thread Tension",
+            "parentId": "T-0013",
+            "input": {
+              "start": "2026-08-10",
+              "end": "2026-09-12",
+              "duration": null
+            },
+            "deps": [
+              {
+                "predecessorId": "T-0003",
+                "type": "FS",
+                "lag": null,
+                "lagSign": 1,
+                "raw": "FS"
+              }
+            ],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0017",
+            "seq": 16,
+            "name": "Stitch Improvement",
+            "parentId": "T-0013",
+            "input": {
+              "start": "2026-08-10",
+              "end": "2026-09-12",
+              "duration": null
+            },
+            "deps": [
+              {
+                "predecessorId": "T-0003",
+                "type": "FS",
+                "lag": null,
+                "lagSign": 1,
+                "raw": "FS"
+              }
+            ],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0018",
+            "seq": 17,
+            "name": "Accessories Identified",
+            "parentId": "T-0013",
+            "input": {
+              "start": "2026-08-10",
+              "end": "2026-08-22",
+              "duration": null
+            },
+            "deps": [
+              {
+                "predecessorId": "T-0003",
+                "type": "FS",
+                "lag": null,
+                "lagSign": 1,
+                "raw": "FS"
+              }
+            ],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0019",
+            "seq": 18,
+            "name": "Phase Gate 2 Presentation",
+            "parentId": "T-0009",
+            "input": {
+              "start": "2026-09-23",
+              "end": "2026-09-24",
+              "duration": null
+            },
+            "deps": [
+              {
+                "predecessorId": "T-0013",
+                "type": "FS",
+                "lag": null,
+                "lagSign": 1,
+                "raw": "FS"
+              }
+            ],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0021",
+            "seq": 19,
+            "name": "Phase 3",
+            "parentId": "T-0001",
+            "input": {
+              "start": "2026-09-21",
+              "end": "2026-11-20",
+              "duration": null
+            },
+            "deps": [],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0022",
+            "seq": 20,
+            "name": "UX/UI",
+            "parentId": "T-0021",
+            "input": {
+              "start": "2026-11-19",
+              "end": "2026-11-20",
+              "duration": null
+            },
+            "deps": [],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0023",
+            "seq": 21,
+            "name": "High Fidelity Designs, component library & user testing",
+            "parentId": "T-0022",
+            "input": {
+              "start": "2026-11-19",
+              "end": "2026-11-20",
+              "duration": null
+            },
+            "deps": [
+              {
+                "predecessorId": "T-0011",
+                "type": "FS",
+                "lag": null,
+                "lagSign": 1,
+                "raw": "FS"
+              }
+            ],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0024",
+            "seq": 22,
+            "name": "Display/ PCBA Board MFG",
+            "parentId": "T-0021",
+            "input": {
+              "start": "2026-09-21",
+              "end": "2026-11-14",
+              "duration": null
+            },
+            "deps": [
+              {
+                "predecessorId": "T-0014",
+                "type": "FS",
+                "lag": null,
+                "lagSign": 1,
+                "raw": "FS"
+              },
+              {
+                "predecessorId": "T-0015",
+                "type": "FS",
+                "lag": null,
+                "lagSign": 1,
+                "raw": "FS"
+              }
+            ],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0025",
+            "seq": 23,
+            "name": "Dev Areas: Working concepts",
+            "parentId": "T-0021",
+            "input": {
+              "start": "2026-09-21",
+              "end": "2026-10-31",
+              "duration": null
+            },
+            "deps": [
+              {
+                "predecessorId": "T-0013",
+                "type": "FS",
+                "lag": null,
+                "lagSign": 1,
+                "raw": "FS"
+              }
+            ],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0026",
+            "seq": 24,
+            "name": "Phase Gate 3 Presentation",
+            "parentId": "T-0001",
+            "input": {
+              "start": "2026-11-18",
+              "end": "2026-11-19",
+              "duration": null
+            },
+            "deps": [],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0028",
+            "seq": 25,
+            "name": "Phase 4",
+            "parentId": "T-0001",
+            "input": {
+              "start": "2026-11-20",
+              "end": "2027-04-02",
+              "duration": null
+            },
+            "deps": [],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0029",
+            "seq": 26,
+            "name": "UX/UI",
+            "parentId": "T-0028",
+            "input": {
+              "start": "2026-11-20",
+              "end": "2027-03-12",
+              "duration": null
+            },
+            "deps": [],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0030",
+            "seq": 27,
+            "name": "Polish, hand off and sign off",
+            "parentId": "T-0029",
+            "input": {
+              "start": "2026-11-20",
+              "end": "2027-03-12",
+              "duration": null
+            },
+            "deps": [
+              {
+                "predecessorId": "T-0023",
+                "type": "FS",
+                "lag": null,
+                "lagSign": 1,
+                "raw": "FS"
+              }
+            ],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0031",
+            "seq": 28,
+            "name": "Tooling",
+            "parentId": "T-0028",
+            "input": {
+              "start": "2026-11-20",
+              "end": "2027-01-01",
+              "duration": null
+            },
+            "deps": [
+              {
+                "predecessorId": "T-0021",
+                "type": "FS",
+                "lag": null,
+                "lagSign": 1,
+                "raw": "FS"
+              }
+            ],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0032",
+            "seq": 29,
+            "name": "ETS",
+            "parentId": "T-0028",
+            "input": {
+              "start": "2027-01-01",
+              "end": "2027-02-19",
+              "duration": null
+            },
+            "deps": [],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0033",
+            "seq": 30,
+            "name": "ETS Build",
+            "parentId": "T-0032",
+            "input": {
+              "start": "2027-01-01",
+              "end": "2027-01-15",
+              "duration": null
+            },
+            "deps": [
+              {
+                "predecessorId": "T-0031",
+                "type": "FS",
+                "lag": null,
+                "lagSign": 1,
+                "raw": "FS"
+              }
+            ],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0034",
+            "seq": 31,
+            "name": "Shipping",
+            "parentId": "T-0032",
+            "input": {
+              "start": "2027-01-15",
+              "end": "2027-01-22",
+              "duration": null
+            },
+            "deps": [
+              {
+                "predecessorId": "T-0033",
+                "type": "FS",
+                "lag": null,
+                "lagSign": 1,
+                "raw": "FS"
+              }
+            ],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0035",
+            "seq": 32,
+            "name": "SDC Testing",
+            "parentId": "T-0032",
+            "input": {
+              "start": "2027-01-22",
+              "end": "2027-02-19",
+              "duration": null
+            },
+            "deps": [
+              {
+                "predecessorId": "T-0034",
+                "type": "FS",
+                "lag": null,
+                "lagSign": 1,
+                "raw": "FS"
+              }
+            ],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0036",
+            "seq": 33,
+            "name": "Beta Testing",
+            "parentId": "T-0028",
+            "input": {
+              "start": "2027-02-19",
+              "end": "2027-04-02",
+              "duration": null
+            },
+            "deps": [
+              {
+                "predecessorId": "T-0035",
+                "type": "FS",
+                "lag": null,
+                "lagSign": 1,
+                "raw": "FS"
+              }
+            ],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0037",
+            "seq": 34,
+            "name": "PPAP",
+            "parentId": "T-0001",
+            "input": {
+              "start": "2027-01-15",
+              "end": "2027-02-19",
+              "duration": null
+            },
+            "deps": [
+              {
+                "predecessorId": "T-0033",
+                "type": "FS",
+                "lag": null,
+                "lagSign": 1,
+                "raw": "FS"
+              }
+            ],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0038",
+            "seq": 35,
+            "name": "MTS Parts Prep",
+            "parentId": "T-0001",
+            "input": {
+              "start": "2027-02-19",
+              "end": "2027-02-25",
+              "duration": null
+            },
+            "deps": [
+              {
+                "predecessorId": "T-0037",
+                "type": "FS",
+                "lag": null,
+                "lagSign": 1,
+                "raw": "FS"
+              }
+            ],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0039",
+            "seq": 36,
+            "name": "Phase Gate 4 Presentation",
+            "parentId": "T-0001",
+            "input": {
+              "start": "2027-04-01",
+              "end": "2027-04-02",
+              "duration": null
+            },
+            "deps": [
+              {
+                "predecessorId": "T-0032",
+                "type": "FS",
+                "lag": null,
+                "lagSign": 1,
+                "raw": "FS"
+              },
+              {
+                "predecessorId": "T-0036",
+                "type": "FS",
+                "lag": null,
+                "lagSign": 1,
+                "raw": "FS"
+              }
+            ],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0041",
+            "seq": 37,
+            "name": "Phase 5",
+            "parentId": "T-0001",
+            "input": {
+              "start": "2027-02-25",
+              "end": "2027-04-28",
+              "duration": null
+            },
+            "deps": [],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0042",
+            "seq": 38,
+            "name": "MTS Production",
+            "parentId": "T-0041",
+            "input": {
+              "start": "2027-02-25",
+              "end": "2027-04-07",
+              "duration": null
+            },
+            "deps": [],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0043",
+            "seq": 39,
+            "name": "Parts Inspection",
+            "parentId": "T-0042",
+            "input": {
+              "start": "2027-02-25",
+              "end": "2027-03-18",
+              "duration": null
+            },
+            "deps": [
+              {
+                "predecessorId": "T-0038",
+                "type": "FS",
+                "lag": null,
+                "lagSign": 1,
+                "raw": "FS"
+              }
+            ],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0044",
+            "seq": 40,
+            "name": "MTS Build",
+            "parentId": "T-0042",
+            "input": {
+              "start": "2027-03-17",
+              "end": "2027-04-02",
+              "duration": null
+            },
+            "deps": [
+              {
+                "predecessorId": "T-0043",
+                "type": "FS",
+                "lag": null,
+                "lagSign": 1,
+                "raw": "FS"
+              }
+            ],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0045",
+            "seq": 41,
+            "name": "CRD",
+            "parentId": "T-0042",
+            "input": {
+              "start": "2027-04-02",
+              "end": "2027-04-07",
+              "duration": null
+            },
+            "deps": [
+              {
+                "predecessorId": "T-0044",
+                "type": "FS",
+                "lag": null,
+                "lagSign": 1,
+                "raw": "FS"
+              }
+            ],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0046",
+            "seq": 42,
+            "name": "MTS Units Available",
+            "parentId": "T-0041",
+            "input": {
+              "start": "2027-04-06",
+              "end": "2027-04-07",
+              "duration": null
+            },
+            "deps": [
+              {
+                "predecessorId": "T-0045",
+                "type": "FS",
+                "lag": null,
+                "lagSign": 1,
+                "raw": "FS"
+              }
+            ],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0047",
+            "seq": 43,
+            "name": "MTS Review/Audit/Quality Hold",
+            "parentId": "T-0041",
+            "input": {
+              "start": "2027-04-07",
+              "end": "2027-04-28",
+              "duration": null
+            },
+            "deps": [
+              {
+                "predecessorId": "T-0046",
+                "type": "FS",
+                "lag": null,
+                "lagSign": 1,
+                "raw": "FS"
+              }
+            ],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0048",
+            "seq": 44,
+            "name": "Phase Gate 5 Presentation",
+            "parentId": "T-0001",
+            "input": {
+              "start": "2027-07-21",
+              "end": "2027-07-22",
+              "duration": null
+            },
+            "deps": [
+              {
+                "predecessorId": "T-0047",
+                "type": "FS",
+                "lag": null,
+                "lagSign": 1,
+                "raw": "FS"
+              }
+            ],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0050",
+            "seq": 45,
+            "name": "Launch",
+            "parentId": "T-0001",
+            "input": {
+              "start": "2027-04-28",
+              "end": "2027-08-18",
+              "duration": null
+            },
+            "deps": [],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0051",
+            "seq": 46,
+            "name": "Mass Production",
+            "parentId": "T-0050",
+            "input": {
+              "start": "2027-04-28",
+              "end": "2027-06-02",
+              "duration": null
+            },
+            "deps": [],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0052",
+            "seq": 47,
+            "name": "Build Time",
+            "parentId": "T-0051",
+            "input": {
+              "start": "2027-04-28",
+              "end": "2027-05-19",
+              "duration": null
+            },
+            "deps": [
+              {
+                "predecessorId": "T-0047",
+                "type": "FS",
+                "lag": null,
+                "lagSign": 1,
+                "raw": "FS"
+              }
+            ],
+            "collapsed": false,
+            "note": "Compare to launch qty to what the ramp up plan can be = build time",
+            "progress": 0
+          },
+          {
+            "id": "T-0053",
+            "seq": 48,
+            "name": "Audit",
+            "parentId": "T-0051",
+            "input": {
+              "start": "2027-05-19",
+              "end": "2027-05-26",
+              "duration": null
+            },
+            "deps": [
+              {
+                "predecessorId": "T-0052",
+                "type": "FS",
+                "lag": null,
+                "lagSign": 1,
+                "raw": "FS"
+              }
+            ],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0054",
+            "seq": 49,
+            "name": "CRD",
+            "parentId": "T-0051",
+            "input": {
+              "start": "2027-05-26",
+              "end": "2027-05-29",
+              "duration": null
+            },
+            "deps": [
+              {
+                "predecessorId": "T-0053",
+                "type": "FS",
+                "lag": null,
+                "lagSign": 1,
+                "raw": "FS"
+              }
+            ],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0055",
+            "seq": 50,
+            "name": "Container Loading",
+            "parentId": "T-0051",
+            "input": {
+              "start": "2027-05-31",
+              "end": "2027-06-02",
+              "duration": null
+            },
+            "deps": [
+              {
+                "predecessorId": "T-0054",
+                "type": "FS",
+                "lag": null,
+                "lagSign": 1,
+                "raw": "FS"
+              }
+            ],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0056",
+            "seq": 51,
+            "name": "US Transit Time",
+            "parentId": "T-0050",
+            "input": {
+              "start": "2027-06-01",
+              "end": "2027-07-17",
+              "duration": null
+            },
+            "deps": [
+              {
+                "predecessorId": "T-0055",
+                "type": "FS",
+                "lag": null,
+                "lagSign": 1,
+                "raw": "FS"
+              }
+            ],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0057",
+            "seq": 52,
+            "name": "US OTS",
+            "parentId": "T-0050",
+            "input": {
+              "start": "2027-07-16",
+              "end": "2027-07-17",
+              "duration": null
+            },
+            "deps": [
+              {
+                "predecessorId": "T-0056",
+                "type": "FS",
+                "lag": null,
+                "lagSign": 1,
+                "raw": "FS"
+              }
+            ],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0058",
+            "seq": 53,
+            "name": "ROW Transit Time",
+            "parentId": "T-0050",
+            "input": {
+              "start": "2027-06-02",
+              "end": "2027-08-18",
+              "duration": null
+            },
+            "deps": [
+              {
+                "predecessorId": "T-0055",
+                "type": "FS",
+                "lag": null,
+                "lagSign": 1,
+                "raw": "FS"
+              }
+            ],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0059",
+            "seq": 54,
+            "name": "ROW OTS",
+            "parentId": "T-0050",
+            "input": {
+              "start": "2027-08-17",
+              "end": "2027-08-18",
+              "duration": null
+            },
+            "deps": [
+              {
+                "predecessorId": "T-0058",
+                "type": "FS",
+                "lag": null,
+                "lagSign": 1,
+                "raw": "FS"
+              }
+            ],
+            "collapsed": false,
+            "progress": 0
+          },
+          {
+            "id": "T-0008",
+            "seq": 55,
+            "name": "",
+            "parentId": null,
+            "input": {
+              "start": null,
+              "end": null,
+              "duration": null
+            },
+            "deps": [],
+            "collapsed": false
+          },
+          {
+            "id": "T-0020",
+            "seq": 56,
+            "name": "",
+            "parentId": null,
+            "input": {
+              "start": null,
+              "end": null,
+              "duration": null
+            },
+            "deps": [],
+            "collapsed": false
+          },
+          {
+            "id": "T-0027",
+            "seq": 57,
+            "name": "",
+            "parentId": null,
+            "input": {
+              "start": null,
+              "end": null,
+              "duration": null
+            },
+            "deps": [],
+            "collapsed": false
+          },
+          {
+            "id": "T-0040",
+            "seq": 58,
+            "name": "",
+            "parentId": null,
+            "input": {
+              "start": null,
+              "end": null,
+              "duration": null
+            },
+            "deps": [],
+            "collapsed": false
+          },
+          {
+            "id": "T-0049",
+            "seq": 59,
+            "name": "",
+            "parentId": null,
+            "input": {
+              "start": null,
+              "end": null,
+              "duration": null
+            },
+            "deps": [],
+            "collapsed": false
+          }
+        ]
+      }
+    }
+  ]
+}

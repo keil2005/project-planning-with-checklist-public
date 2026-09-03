@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  log4j2.xml —— 静音配置（放在 classpath 根目录，即 server/mpxj/）。
+
+  为什么需要：MppImport 的 stdout 被 server/mppImport.ts 当作中间 JSON 直接 JSON.parse。
+  若 classpath 里有 log4j-api 但没有 log4j-core，Log4j2 会回退到内置的 SimpleLogger
+  并向控制台打印 "ERROR StatusLogger Log4j2 could not find a logging implementation..."，
+  一旦该行落到 stdout 就会破坏 JSON 解析。这里显式把日志级别设为 off，
+  确保 stdout 永远只有中间 JSON 本身。
+-->
+<Configuration status="OFF">
+  <Appenders>
+    <Console name="Console" target="SYSTEM_ERR">
+      <PatternLayout pattern="%m%n"/>
+    </Console>
+  </Appenders>
+  <Loggers>
+    <Root level="off">
+      <AppenderRef ref="Console"/>
+    </Root>
+  </Loggers>
+</Configuration>

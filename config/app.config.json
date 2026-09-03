@@ -1,0 +1,14 @@
+{
+  "port": 3001,
+  "dataDir": "./data",
+  "lock": {
+    "timeoutMs": 30000,
+    "heartbeatMs": 10000,
+    "sweepMs": 5000,
+    "pollMs": 5000
+  },
+  "schedule": {
+    "anchorDate": "TODAY",
+    "defaultDuration": "1d"
+  }
+}
