@@ -1,7 +1,7 @@
 {
   "name": "plan-gantt",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "内部轻量项目管理 / 甘特图计划工具（单页 Web App + Node 中心化服务 + 文件型 JSON 存储）",
   "license": "UNLICENSED",
   "scripts": {

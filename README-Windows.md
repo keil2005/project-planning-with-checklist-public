@@ -11,14 +11,14 @@
 
 ## 2. 启动（零安装）
 1. 将本目录映射到网络盘（例如 `Z:\00 public\PM tool\plan-gantt`）。
-2. **双击 `start-plan-gantt v1.1.0.bat`** 即可——脚本会自动定位 Node、启动服务、并保持窗口打开。（另有顶层一键入口 `plan-gantt 一键启动 v1.1.0.cmd`，双击后自动连接共享盘并调用本启动器。）
+2. **双击 `start-plan-gantt v1.1.1.bat`** 即可——脚本会自动定位 Node、启动服务、并保持窗口打开。（另有顶层一键入口 `plan-gantt 一键启动 v1.1.1.cmd`，双击后自动连接共享盘并调用本启动器。）
 3. 浏览器打开 `http://localhost:3001` → 从用户列表选身份 → 进入甘特工具。
 
 服务启动后会打印：端口、数据目录 `DATA_DIR`、版本、锁参数、静态目录。
 
 > 如双击后窗口仍一闪而过：脚本已改为**始终 `pause` 保持窗口**，请把窗口里的红色报错文字截图发我。常见原因：本机找不到 Node（`where node` 无结果）——需把 Node 安装目录加入系统 PATH，或用 WorkBuddy 自带 Node 路径。
 
-> 🆘 **如果在共享盘里根本看不到 `start-plan-gantt v1.1.0.bat`**：部分公司文件服务器会屏蔽/隐藏 `.bat`、`.cmd` 这类可执行脚本（文件屏蔽策略或杀毒软件所致）。这是 **IT 策略，不是部署缺失**——该文件在共享盘上确认存在且完整（4681 字节，MD5 与源码一致）。此时**不需要任何启动脚本**，直接用下面的方案 B 或 C 启动，效果完全相同。
+> 🆘 **如果在共享盘里根本看不到 `start-plan-gantt v1.1.1.bat`**：部分公司文件服务器会屏蔽/隐藏 `.bat`、`.cmd` 这类可执行脚本（文件屏蔽策略或杀毒软件所致）。这是 **IT 策略，不是部署缺失**——该文件在共享盘上确认存在且完整（4681 字节，MD5 与源码一致）。此时**不需要任何启动脚本**，直接用下面的方案 B 或 C 启动，效果完全相同。
 
 ### 2.1 方案 B：命令行直接启动（推荐，最省事）
 1. `Win + R` → 输入 `cmd` → 回车。
@@ -92,14 +92,14 @@ enable-mpp-import.bat -LocalLibs
 
 **离线环境**：把 `OpenJDK17U-jre_x64_windows_hotspot.zip` 与 `mpxj-libs.zip` 放到部署包的 `offline-mpp-runtime\` 目录，脚本会优先使用离线包、不联网。
 
-**启用后**：**重启 plan-gantt 服务**（关掉原窗口重新双击 `start-plan-gantt v1.1.0.bat`），导入按钮即可使用。若仍提示「未启用」，启动时会给出具体原因（缺 Java / 缺桥接产物），且启动服务时设 `PLAN_GANTT_JAVA=<java.exe 路径>` 可强制指定 Java。
+**启用后**：**重启 plan-gantt 服务**（关掉原窗口重新双击 `start-plan-gantt v1.1.1.bat`），导入按钮即可使用。若仍提示「未启用」，启动时会给出具体原因（缺 Java / 缺桥接产物），且启动服务时设 `PLAN_GANTT_JAVA=<java.exe 路径>` 可强制指定 Java。
 
 **停用**：删掉 `%LOCALAPPDATA%\plan-gantt`（便携 JRE）与 `server\mpxj\MppImport.class` 即可回到零依赖状态，服务仍照常运行，导入恢复为 501。想再次启用，重跑 `enable-mpp-import.bat` 即可。
 
 > 注：若该机器 PATH 上本来就有系统 Java，仅删 JRE 不会停用——此时删 `MppImport.class` 才是决定性的（服务启动时日志会打印「MPP 导入 : 未启用 (no-bridge)」）。
 
 ## 6. 停止服务
-在运行 `npm start` / `start-plan-gantt v1.1.0.bat` 的命令行窗口按 `Ctrl+C` 即可优雅退出（会释放编辑锁）。
+在运行 `npm start` / `start-plan-gantt v1.1.1.bat` 的命令行窗口按 `Ctrl+C` 即可优雅退出（会释放编辑锁）。
 
 ## 7. 排错
 - **窗口一闪而过 / 报「未找到 Node」**：脚本已改为始终 `pause` 保持窗口。请把窗口报错截图发我。根因多半是 `node.exe` 不在 PATH——把 Node 安装目录（或 WorkBuddy 自带 Node 的 `bin` 目录）加入系统 PATH 后重开资源管理器再双击。
