@@ -50,11 +50,11 @@ if [ -d "$LOCAL_PLANS_DIR" ]; then
 fi
 
 if [ -z "$LATEST_DIR" ]; then
-  echo "❌ 未在 $LOCAL_PLANS_DIR 找到「$PLAN_NAME」计划"
+  echo "❌ 未在 $LOCAL_PLANS_DIR 找到「${PLAN_NAME}」计划"
   exit 1
 fi
 PLAN_ID="$(basename "$LATEST_DIR")"
-echo "ℹ️  最新计划：$PLAN_ID （$PLAN_NAME v$LATEST_VER）"
+echo "ℹ️  最新计划：$PLAN_ID （$PLAN_NAME v${LATEST_VER}）"
 
 CSV="/tmp/Project-A timeline review-v${LATEST_VER}.csv"
 XML="/tmp/Project-A timeline review-v${LATEST_VER}.xml"
@@ -85,8 +85,13 @@ fi
 cp "$LATEST_DIR/plan.json" "$PLANJSON"
 
 # ---- 4. 同步到共享端 Project-A 文件夹 ----
+# 用临时目录 + --delete 才能清掉旧版本号残留（源是"文件列表"时 --delete 不生效）；
+# --inplace 避免 SMB 上 rsync 产生 .临时文件 残留（SMB 不支持原子 rename）。
 mkdir -p "$SHARE_DIR"
-rsync -a --delete "$CSV" "$XML" "$PLANJSON" "$SHARE_DIR/"
+TMP_SYNC="$(mktemp -d)"
+cp "$CSV" "$XML" "$PLANJSON" "$TMP_SYNC/"
+rsync -a --delete --inplace "$TMP_SYNC/" "$SHARE_DIR/"
+rm -rf "$TMP_SYNC"
 
 echo "✅ 已双写到 $SHARE_DIR"
 ls -la "$SHARE_DIR"
