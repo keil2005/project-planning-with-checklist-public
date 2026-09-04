@@ -183,6 +183,14 @@ export default function Toolbar(): JSX.Element {
         >
           CSV（Excel 可直接打开）
         </MenuItem>
+        <MenuItem
+          onClick={() => {
+            setExportAnchor(null);
+            openDialog('exportTodos');
+          }}
+        >
+          Markdown 清单…
+        </MenuItem>
       </Menu>
 
       <Button startIcon={<HistoryIcon />} variant="text" disabled={!plan} onClick={() => openDialog('history')}>

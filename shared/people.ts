@@ -82,3 +82,23 @@ export function collectPeople(task: { owner?: unknown; consultant?: unknown } | 
   if (!task) return [];
   return dedupe([...normalizePeople(task.owner), ...normalizePeople(task.consultant)]);
 }
+
+/**
+ * 「该任务是不是我的」：负责人或顾问人含 `me`（大小写、首尾空格不敏感）。
+ *
+ * 单一真源：服务端（MD 导出 `scope=mine`）与客户端（「Assign to me」筛选、U03）共用。
+ * 任一处语义漂移都会让"看到的与导出的不一致"，因此放 shared/ 防止双份实现。
+ *
+ * @param task  任务（已 normalizePlan；owner/consultant 必为 string[]）
+ * @param me    当前身份；空串/null/undefined → 一律 false（调用方决定禁用按钮）
+ */
+export function isMine(
+  task: { owner?: unknown; consultant?: unknown } | undefined | null,
+  me: string | null | undefined,
+): boolean {
+  if (!task || !me || me.trim() === '') return false;
+  const m = me.trim().toLowerCase();
+  return [...normalizePeople(task.owner), ...normalizePeople(task.consultant)].some(
+    (p) => p.trim().toLowerCase() === m,
+  );
+}

@@ -148,9 +148,22 @@ export const api = {
     return request<{ ok: true }>(`/locks/${encodeURIComponent(planId)}/release`, 'POST', { user, lockToken });
   },
 
-  /** 导出直链（由浏览器下载，带 Content-Disposition） */
-  exportUrl(planId: string, format: ExportFormat): string {
-    return `${BASE}/plans/${encodeURIComponent(planId)}/export?format=${format}`;
+  /**
+   * 导出直链（由浏览器下载，带 Content-Disposition）。
+   *
+   * @param format  'mspdi' | 'csv' | 'md'
+   * @param scope   仅 MD 生效：'mine' 时必须同时传 user；'all'/缺省 → 全量
+   * @param user    仅 scope='mine' 时必填：作为 query `user=...` 传给服务端做 isMine 过滤
+   */
+  exportUrl(planId: string, format: ExportFormat, scope?: 'mine' | 'all', user?: string): string {
+    const params = new URLSearchParams({ format });
+    if (format === 'md' && scope) {
+      params.set('scope', scope);
+      if (scope === 'mine' && user && user.trim() !== '') {
+        params.set('user', user.trim());
+      }
+    }
+    return `${BASE}/plans/${encodeURIComponent(planId)}/export?${params.toString()}`;
   },
 
   /** 读取全局工作日历配置（GET /api/calendar，无需锁） */

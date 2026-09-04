@@ -142,13 +142,13 @@ describe('U01 列宽：loadWidths / saveWidths（localStorage mock）', () => {
   });
 
   it('saveWidths 后 loadWidths 能完整还原（不丢精度）', () => {
-    const widths = [60, 300, 100, 100, 80, 120, 130, 140, 72, 150];
+    const widths = [60, 300, 128, 128, 80, 120, 130, 140, 72, 150];
     saveWidths(widths, 'p-A');
     expect(loadWidths('p-A')).toEqual(widths);
   });
 
   it('落盘形态是按列名的对象，不是按下标的数组', () => {
-    const widths = [60, 300, 100, 100, 80, 120, 130, 140, 72, 150];
+    const widths = [60, 300, 128, 128, 80, 120, 130, 140, 72, 150];
     saveWidths(widths, 'p-A');
     const raw = store.get('plan-gantt:colw:v3:p-A')!;
     const parsed = JSON.parse(raw) as Record<string, number>;
@@ -159,8 +159,8 @@ describe('U01 列宽：loadWidths / saveWidths（localStorage mock）', () => {
   });
 
   it('每个计划各存一份，互不干扰（键带 planId）', () => {
-    const a = [60, 300, 100, 100, 80, 120, 130, 140, 72, 150];
-    const b = [52, 700, 96, 96, 78, 110, 120, 120, 72, 136];
+    const a = [60, 300, 128, 128, 80, 120, 130, 140, 72, 150];
+    const b = [52, 260, 128, 128, 78, 110, 120, 120, 72, 136]; // 当前默认列宽
     saveWidths(a, 'p-A');
     saveWidths(b, 'p-B');
     expect(loadWidths('p-A')).toEqual(a);
@@ -171,7 +171,7 @@ describe('U01 列宽：loadWidths / saveWidths（localStorage mock）', () => {
   });
 
   it('未调过宽度的计划不受其它计划影响，回退到默认值', () => {
-    saveWidths([60, 300, 100, 100, 80, 120, 130, 140, 72, 150], 'p-A');
+    saveWidths([60, 300, 128, 128, 80, 120, 130, 140, 72, 150], 'p-A');
     expect(loadWidths('p-C')).toEqual(defaultWidths());
   });
 
@@ -251,7 +251,7 @@ describe('U01 列宽：loadWidths / saveWidths（localStorage mock）', () => {
   });
 
   it('planId 为空 / undefined 时走 v1 全局键（兼容无计划上下文的调用）', () => {
-    const w = [60, 300, 100, 100, 80, 120, 130, 140, 72, 150];
+    const w = [60, 300, 128, 128, 80, 120, 130, 140, 72, 150];
     saveWidths(w, null);
     expect(store.has('plan-gantt:column-widths:v1')).toBe(true);
     expect(loadWidths(null)).toEqual(w);

@@ -25,7 +25,7 @@ import {
   parseISODate,
 } from '../shared/datetime';
 import { buildIdSeqMaps, formatDepsExpr } from '../shared/scheduler';
-import { formatPeople, normalizePeople } from '../shared/people';
+import { isMine, formatPeople, normalizePeople } from '../shared/people';
 import { todosProgress, todosProgressText } from '../shared/todo';
 import type {
   DepType,
@@ -126,10 +126,27 @@ function buildNotes(t: Task): string {
   return parts.join('\n');
 }
 
-/** 文件名：{planName}-v{version}.{ext} */
-export function exportFileName(plan: Plan, format: ExportFormat): string {
+/** MD 导出的范围（仅与我相关 / 全部）。mspdi/csv 忽略此参数。 */
+export type TodoExportScope = 'all' | 'mine';
+
+const FILE_EXT: Record<ExportFormat, string> = {
+  mspdi: 'xml',
+  csv: 'csv',
+  md: 'md',
+};
+
+/**
+ * 文件名：MSPDI/CSV → `{planName}-v{version}.{ext}`；
+ * MD（带 scope）→ `{planName}-todos-{scope}-v{version}.md`，
+ * 显式 `all` / `mine` 段以便用户下载两次后不混淆。
+ */
+export function exportFileName(plan: Plan, format: ExportFormat, scope?: TodoExportScope): string {
   const safeName = (plan.name || '未命名计划').replace(/[\\/:*?"<>|]/g, '_');
-  const ext = format === 'mspdi' ? 'xml' : 'csv';
+  const ext = FILE_EXT[format] ?? 'txt';
+  if (format === 'md') {
+    const s = scope === 'mine' ? 'mine' : 'all';
+    return `${safeName}-todos-${s}-v${plan.version}.${ext}`;
+  }
   return `${safeName}-v${plan.version}.${ext}`;
 }
 
@@ -425,4 +442,202 @@ export function toCsv(plan: Plan, sched: ScheduleResult): string {
 
   // UTF-8 BOM，便于 Excel 直接打开
   return `\uFEFF${lines.join('\r\n')}\r\n`;
+}
+
+/* ============================================================
+   Markdown TODO 清单（U05 增量，2026-09-04）
+   ============================================================ */
+
+/**
+ * MD 导出选项。
+ *
+ * - scope='all'   → 全部任务按显示顺序输出
+ * - scope='mine'  → 只输出 isMine(task, me) 命中的任务；命中任务下的全部 todo 仍展示
+ *                   （保留"我负责的任务完整交付物"语义，与 UI「Assign to me」严格一致）
+ * - me            → scope=mine 时必填（大小写/首尾空格不敏感，复用 isMine）
+ * - exportedAt    → 缺省取服务端 now；测试可注入固定值
+ */
+export interface TodoExportOptions {
+  scope: TodoExportScope;
+  me?: string;
+  exportedAt?: string;
+}
+
+/** 把 ISO 时间戳压成 'YYYY-MM-DD HH:MM:SS' 便于 Markdown 直读（缺省取 now） */
+function formatExportedAt(iso: string): string {
+  // 兼容 Z 后缀；保证稳定可预测，避免调用方 toLocaleString 在不同 Node 时区表现漂移
+  const d = new Date(iso);
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+/** 负责人/顾问人展示串：空数组 → '—'（与表格占位一致），非空 → '、' 拼接 */
+function peopleOrDash(v: unknown): string {
+  const list = normalizePeople(v);
+  return list.length === 0 ? '—' : formatPeople(list);
+}
+
+/** derivedFrom → 中文标签（与 UI 列一致） */
+function deriveFromLabel(d: TaskComputed['derivedFrom'] | undefined): string {
+  switch (d) {
+    case 'INPUT':
+      return '手动';
+    case 'DEP':
+      return '依赖';
+    case 'ROLLUP':
+      return '汇总';
+    case 'ANCHOR':
+      return '锚点';
+    case 'MIXED':
+      return '混合';
+    default:
+      return '—';
+  }
+}
+
+/**
+ * 生成 Markdown TODO 清单（U05 增量，2026-09-04）。
+ *
+ * 章节结构：
+ *   # {planName} v{version} — TODO 清单
+ *   顶部摘要表（导出时间、范围、统计）
+ *   ---
+ *   ## {任务名}        ×N
+ *   > 元信息（编号、日期、负责人、来源）
+ *   TODO（x/y）：
+ *   - [x] / [ ] 文本 — assignee
+ *
+ * 设计取舍：
+ *   - 走 server-side 而非纯客户端：与 mspdi/csv 共用 schedulePlan() 的 computed 字段
+ *     （start/end/derivedFrom），保证「UI 看到的日期」与「导出看到的日期」完全一致。
+ *   - 任务顺序取 `sched.order`（与表格/甘特显示顺序一致），不是 plan.tasks 原始数组。
+ *   - 没有 computed 的脏任务（sanitizeTasks 漏过）静默跳过，与 MSPDI/CSV 行为一致。
+ *   - 顶部「我负责的 TODO」单独计数（todo.assignee == me），与「命中任务数」分开：
+ *     一个命中任务可能含多条别人 assignee 的 todo。
+ */
+export function toTodosMarkdown(plan: Plan, sched: ScheduleResult, opts: TodoExportOptions): string {
+  const exportedAt = opts.exportedAt ?? new Date().toISOString();
+  const me = (opts.me ?? '').trim();
+
+  // 显示顺序（与表格对齐）
+  const order: string[] = Array.isArray(sched.order) && sched.order.length > 0
+    ? sched.order
+    : plan.tasks.map((t) => t.id);
+
+  // scope=mine 过滤（命中后保留任务内全部 todo，与 Assign to me 语义一致）
+  const tasksInOrder: Task[] = [];
+  for (const id of order) {
+    const t = plan.tasks.find((x) => x.id === id);
+    if (!t) continue;
+    if (opts.scope === 'mine' && !isMine(t, me)) continue;
+    tasksInOrder.push(t);
+  }
+
+  // 统计：按"我负责的 todo"独立计数（todo.assignee == me，大小写/首尾空格不敏感）
+  const meKey = me.toLowerCase();
+  let totalTodos = 0;
+  let doneTodos = 0;
+  let mineTodos = 0;
+  for (const t of tasksInOrder) {
+    for (const td of t.todos ?? []) {
+      totalTodos += 1;
+      if (td.done) doneTodos += 1;
+      if (meKey !== '' && td.assignee && td.assignee.trim().toLowerCase() === meKey) mineTodos += 1;
+    }
+  }
+
+  const lines: string[] = [];
+
+  // ─── 标题与摘要 ───
+  lines.push(`# ${plan.name || '未命名计划'} v${plan.version} — TODO 清单`);
+  lines.push('');
+  lines.push(`| 字段 | 值 |`);
+  lines.push(`| --- | --- |`);
+  lines.push(`| 导出时间 | ${formatExportedAt(exportedAt)} |`);
+  if (opts.scope === 'mine') {
+    lines.push(`| 范围 | 仅与我相关（${me || '未指定'}） |`);
+  } else {
+    lines.push(`| 范围 | 全部 |`);
+  }
+  lines.push(`| 计划任务数 | ${plan.tasks.length} |`);
+  lines.push(`| 命中任务数 | ${tasksInOrder.length} |`);
+  lines.push(`| TODO 总数 | ${totalTodos}（已完成 ${doneTodos} / 未完成 ${totalTodos - doneTodos}） |`);
+  if (opts.scope === 'mine') {
+    lines.push(`| 我负责的 TODO | ${mineTodos} |`);
+  }
+  lines.push('');
+
+  // ─── 空态 ───
+  if (tasksInOrder.length === 0) {
+    if (opts.scope === 'mine') {
+      lines.push(`> 当前用户「${me || '未指定'}」在本计划中没有负责或顾问任务，TODO 清单为空。`);
+    } else {
+      lines.push(`> 本计划没有任务。`);
+    }
+    lines.push('');
+    return lines.join('\n');
+  }
+
+  lines.push('---');
+  lines.push('');
+
+  // ─── 任务分组 ───
+  for (const t of tasksInOrder) {
+    const c: TaskComputed | undefined = sched.computed[t.id];
+    const todos = (t.todos ?? []).slice().sort((a, b) => a.order - b.order);
+    const { done, total } = todosProgress(todos);
+
+    // 任务标题（##）—— 用 T-xxxx 与表格 ID 对齐
+    const taskId = t.id ? `\`${t.id}\`` : '';
+    const name = (t.name && t.name.trim() !== '') ? t.name : '未命名任务';
+    lines.push(`## ${name}${taskId !== '' ? ` ${taskId}` : ''}`);
+    lines.push('');
+
+    // 元信息（> ...）
+    const meta: string[] = [];
+    if (c) {
+      const dates = `${c.start} ~ ${c.end}`;
+      const dur = formatDuration(c.duration);
+      const progress = typeof t.progress === 'number' ? ` · 进度 ${Math.round(t.progress)}%` : '';
+      meta.push(`${dates} · ${dur ? `${dur} 工作日` : '即时点'}${progress}`);
+    }
+    const owners = peopleOrDash(t.owner);
+    const consultants = peopleOrDash(t.consultant);
+    meta.push(`负责人：${owners} · 顾问人：${consultants}`);
+    if (c) {
+      meta.push(`来源：${deriveFromLabel(c.derivedFrom)}`);
+    }
+    if (typeof t.note === 'string' && t.note.trim() !== '') {
+      meta.push(`备注：${t.note.trim()}`);
+    }
+    lines.push(`> ${meta.join('  \n> ')}`);
+    lines.push('');
+
+    // TODO 清单
+    if (total === 0) {
+      lines.push('TODO（0/0）：');
+      lines.push('');
+      lines.push('- （无 TODO）');
+      lines.push('');
+    } else {
+      lines.push(`TODO（${done}/${total}）：`);
+      lines.push('');
+      for (const td of todos) {
+        const mark = td.done ? '[x]' : '[ ]';
+        const who = td.assignee ? ` — ${td.assignee}` : '';
+        lines.push(`- ${mark} ${td.text}${who}`);
+      }
+      lines.push('');
+    }
+
+    lines.push('---');
+    lines.push('');
+  }
+
+  // 去掉末尾多余的 '---'（保持视觉干净）
+  while (lines.length > 0 && lines[lines.length - 1] === '---') {
+    lines.pop();
+  }
+
+  return lines.join('\n');
 }

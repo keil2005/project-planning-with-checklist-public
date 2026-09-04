@@ -20,10 +20,13 @@ import DialogContentText from '@mui/material/DialogContentText';
 import DialogTitle from '@mui/material/DialogTitle';
 import Divider from '@mui/material/Divider';
 import Drawer from '@mui/material/Drawer';
+import FormControlLabel from '@mui/material/FormControlLabel';
 import IconButton from '@mui/material/IconButton';
 import List from '@mui/material/List';
 import ListItemButton from '@mui/material/ListItemButton';
 import ListItemText from '@mui/material/ListItemText';
+import Radio from '@mui/material/Radio';
+import RadioGroup from '@mui/material/RadioGroup';
 import TextField from '@mui/material/TextField';
 import CloseIcon from '@mui/icons-material/Close';
 import { useStore } from '../store';
@@ -630,6 +633,93 @@ function CalendarSettingsDialog(): JSX.Element | null {
   );
 }
 
+/* ============================ Markdown TODO 导出（U05 增量） ============================ */
+
+/**
+ * 范围选择 dialog。
+ *  - 默认 scope=mine；未选身份时 mine 项 disabled + 提示
+ *  - 确认 → store.exportTodos(scope) → 关闭 dialog；服务端 Content-Disposition 触发下载
+ */
+function ExportTodosDialog(): JSX.Element | null {
+  const open = useStore((s) => s.dialogs.exportTodos);
+  const user = useStore((s) => s.session.user);
+  const closeDialog = useStore((s) => s.closeDialog);
+  const exportTodos = useStore((s) => s.exportTodos);
+
+  const [scope, setScope] = useState<'mine' | 'all'>('mine');
+
+  // 每次打开重置回 mine（用户上次选 all 时，再次进入仍以 mine 兜底，避免误触"全部"）
+  useEffect(() => {
+    if (open) setScope('mine');
+  }, [open]);
+
+  const handleClose = (): void => {
+    closeDialog('exportTodos');
+  };
+
+  const handleOk = (): void => {
+    exportTodos(scope);
+    handleClose();
+  };
+
+  const hasUser = !!user && user.trim() !== '';
+  const userLabel = hasUser ? user : '未选身份';
+
+  return (
+    <Dialog open={open} maxWidth="xs" fullWidth onClose={handleClose}>
+      <DialogTitle className="flex items-center justify-between">
+        <span>导出 Markdown TODO 清单</span>
+        <IconButton size="small" onClick={handleClose} aria-label="关闭">
+          <CloseIcon fontSize="small" />
+        </IconButton>
+      </DialogTitle>
+      <DialogContent dividers>
+        <DialogContentText className="mb-2 text-[13px]">
+          选择导出范围。生成 Markdown 文件，包含任务元信息与每条 todo（[x]/[ ] + 文本 + 责任人）。
+        </DialogContentText>
+        <RadioGroup
+          value={scope}
+          onChange={(e) => setScope(e.target.value as 'mine' | 'all')}
+        >
+          <FormControlLabel
+            value="mine"
+            control={<Radio />}
+            disabled={!hasUser}
+            label={
+              <span>
+                仅与我相关
+                <span className={hasUser ? 'ml-1 text-slate-500' : 'ml-1 text-slate-400'}>
+                  （{userLabel}）
+                </span>
+              </span>
+            }
+          />
+          <FormControlLabel
+            value="all"
+            control={<Radio />}
+            label="全部（所有任务 + 全部 TODO + 责任人）"
+          />
+        </RadioGroup>
+        {!hasUser && (
+          <Alert severity="info" className="mt-2 text-[12px]">
+            「仅与我相关」需要先选择身份（工具栏「选择身份」处登录）。
+          </Alert>
+        )}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={handleClose}>取消</Button>
+        <Button
+          variant="contained"
+          onClick={handleOk}
+          disabled={scope === 'mine' && !hasUser}
+        >
+          下载
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
 /* ============================ 汇总导出 ============================ */
 
 export default function Dialogs(): JSX.Element {
@@ -641,6 +731,7 @@ export default function Dialogs(): JSX.Element {
       <HistoryDrawer />
       <NonWorkingDayDialog />
       <CalendarSettingsDialog />
+      <ExportTodosDialog />
     </>
   );
 }

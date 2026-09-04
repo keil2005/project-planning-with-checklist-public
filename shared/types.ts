@@ -363,7 +363,7 @@ export interface ValidationErrData {
   diagnostics: Diagnostic[];
 }
 
-export type ExportFormat = 'mspdi' | 'csv';
+export type ExportFormat = 'mspdi' | 'csv' | 'md';
 
 /* ========================= 错误码（§4.2） ========================= */
 
