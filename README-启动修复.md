@@ -24,13 +24,13 @@ WorkBuddy 自带 Node 的真实 Windows 路径是 `%USERPROFILE%\.workbuddy\bina
 修复：文件写成 **UTF-8 BOM（ef bb bf）**，配合顶部 `chcp 65001 >nul`，中文注释/提示不再被误读。
 
 ## 现状
-已用 **`start-plan-gantt v1.1.0.bat`（修正版 v2：pushd + UTF-8 BOM + CRLF）** 覆盖更新。三处 bug 均已修复并验证：
+已用 **`start-plan-gantt v1.1.1.bat`（修正版 v2：pushd + UTF-8 BOM + CRLF）** 覆盖更新。三处 bug 均已修复并验证：
 - Node 定位命中 `%USERPROFILE%\.workbuddy\binaries\node\versions\22.22.2\node.exe`；
 - 端口 3001 监听、`/api/health` 返回 200；
 - 从共享盘目录直接启动 `server-build\server.cjs` 成功（相对路径解析正常）。
 
 ## 用法（任选其一）
-1. **直接双击 `start-plan-gantt v1.1.0.bat`**（推荐，已修正）。可从 UNC 网络位置双击，无需先映射盘符。
+1. **直接双击 `start-plan-gantt v1.1.1.bat`**（推荐，已修正）。可从 UNC 网络位置双击，无需先映射盘符。
 2. 命令行（方案 B）：
    ```
    "C:\Users\User01.Zheng\.workbuddy\binaries\node\versions\22.22.2\node.exe" server-build\server.cjs
@@ -39,4 +39,4 @@ WorkBuddy 自带 Node 的真实 Windows 路径是 `%USERPROFILE%\.workbuddy\bina
 
 服务起来后浏览器访问 `http://localhost:3001`。
 
-> 原 `start-windows.bat` 因共享盘保护无法覆盖，保留原样；请用修正版 `start-plan-gantt v1.1.0.bat`。
+> 原 `start-windows.bat` 因共享盘保护无法覆盖，保留原样；请用修正版 `start-plan-gantt v1.1.1.bat`。
