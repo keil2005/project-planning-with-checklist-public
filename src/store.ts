@@ -73,7 +73,7 @@ export interface ToastMsg {
   severity: 'success' | 'info' | 'warning' | 'error';
 }
 
-export type DialogName = 'user' | 'planPicker' | 'save' | 'history' | 'calendar';
+export type DialogName = 'user' | 'planPicker' | 'save' | 'history' | 'calendar' | 'exportTodos';
 
 /** 全局工作日历保留资源 id（与 per-plan 锁相互独立，见 server/routes.ts） */
 export const GLOBAL_CALENDAR = 'GLOBAL_CALENDAR';
@@ -188,6 +188,8 @@ export interface StoreState {
   restoreVersion: (version: number, notes: string) => Promise<void>;
 
   exportPlan: (format: ExportFormat) => void;
+  /** MD 导出（U05 增量）；scope=mine 需 session.user 已选 */
+  exportTodos: (scope: 'mine' | 'all') => void;
   setZoom: (zoom: ZoomLevel) => void;
   selectTask: (taskId: string | null) => void;
   jumpToday: () => void;
@@ -405,7 +407,7 @@ export const useStore = create<StoreState>((set, get) => {
     zoom: 'day',
     selectedTaskId: null,
     todayTick: 0,
-    dialogs: { user: false, planPicker: false, save: false, history: false, calendar: false },
+    dialogs: { user: false, planPicker: false, save: false, history: false, calendar: false, exportTodos: false },
     filter: EMPTY_FILTER,
     todoDrawerTaskId: null,
     todosRevision: 0,
@@ -1011,6 +1013,28 @@ export const useStore = create<StoreState>((set, get) => {
         get().showToast('导出使用服务端最新版本，当前有未保存修改不会包含在内', 'warning');
       }
       window.open(api.exportUrl(plan.planId, format), '_blank');
+    },
+
+    /**
+     * MD 导出（U05）。scope=mine 需 session.user 已选，否则直接拒绝并提示。
+     * 与 exportPlan 一样走 window.open，由服务端 Content-Disposition 触发下载。
+     */
+    exportTodos: (scope) => {
+      const plan = get().plan;
+      if (!plan) return;
+      const me = get().session.user;
+      if (scope === 'mine' && (!me || me.trim() === '')) {
+        get().showToast('未选择身份，无法导出「仅与我相关」', 'warning');
+        return;
+      }
+      if (get().dirty) {
+        get().showToast('导出使用服务端最新版本，当前有未保存修改不会包含在内', 'warning');
+      }
+      const url =
+        scope === 'mine'
+          ? api.exportUrl(plan.planId, 'md', 'mine', me ?? '')
+          : api.exportUrl(plan.planId, 'md', 'all');
+      window.open(url, '_blank');
     },
 
     setZoom: (zoom: ZoomLevel) => set({ zoom }),

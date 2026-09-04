@@ -200,14 +200,13 @@ function matchDate(values: string[], f: DateFilter): boolean {
   return f.from !== '' && f.to !== '' && v >= f.from && v <= f.to;
 }
 
-/** 该行是否算「我的」：负责人或顾问人含当前身份（大小写、首尾空格不敏感） */
-export function isMine(task: Task, me: string | null): boolean {
-  if (!me || me.trim() === '') return false;
-  const m = me.trim().toLowerCase();
-  return [...normalizePeople(task.owner), ...normalizePeople(task.consultant)].some(
-    (p) => p.trim().toLowerCase() === m,
-  );
-}
+/**
+ * 该行是否算「我的」：负责人或顾问人含当前身份（大小写、首尾空格不敏感）。
+ * 单一真源在 shared/people.ts（服务端 MD 导出 `scope=mine` 共用），本文件 re-export
+ * 以保持既有 `import { isMine } from './filter'` 调用点零改动。
+ */
+import { isMine } from '../shared/people';
+export { isMine };
 
 /** 所有条件之间是与（AND）：每列都要满足，且 onlyMine 也要满足 */
 export function taskMatches(task: Task, f: FilterState, ctx: FilterContext): boolean {

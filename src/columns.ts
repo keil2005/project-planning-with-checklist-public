@@ -46,8 +46,8 @@ export interface ColumnDef {
 export const COLUMNS: ColumnDef[] = [
   { key: 'seq', label: '行号', def: 52, min: 40, max: 120 },
   { key: 'name', label: '任务名称', def: 260, min: 120, max: 960 },
-  { key: 'start', label: '开始', def: 96, min: 84, max: 240 },
-  { key: 'end', label: '结束', def: 96, min: 84, max: 240 },
+  { key: 'start', label: '开始', def: 128, min: 108, max: 240 },
+  { key: 'end', label: '结束', def: 128, min: 108, max: 240 },
   { key: 'duration', label: '时长', def: 78, min: 60, max: 200 },
   { key: 'deps', label: '依赖', def: 110, min: 80, max: 360 },
   { key: 'owner', label: '负责人', def: 120, min: 90, max: 360 },

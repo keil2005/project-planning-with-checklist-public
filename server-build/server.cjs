@@ -48196,6 +48196,13 @@ function formatPeople(names, sep = PEOPLE_SEP) {
   if (!names || names.length === 0) return "";
   return names.join(sep);
 }
+function isMine(task, me) {
+  if (!task || !me || me.trim() === "") return false;
+  const m = me.trim().toLowerCase();
+  return [...normalizePeople(task.owner), ...normalizePeople(task.consultant)].some(
+    (p) => p.trim().toLowerCase() === m
+  );
+}
 
 // shared/todo.ts
 var todoSeq = 0;
@@ -49091,9 +49098,18 @@ function buildNotes(t) {
   if (todoSummary !== "") parts.push(todoSummary);
   return parts.join("\n");
 }
-function exportFileName(plan, format) {
+var FILE_EXT = {
+  mspdi: "xml",
+  csv: "csv",
+  md: "md"
+};
+function exportFileName(plan, format, scope) {
   const safeName = (plan.name || "\u672A\u547D\u540D\u8BA1\u5212").replace(/[\\/:*?"<>|]/g, "_");
-  const ext = format === "mspdi" ? "xml" : "csv";
+  const ext = FILE_EXT[format] ?? "txt";
+  if (format === "md") {
+    const s = scope === "mine" ? "mine" : "all";
+    return `${safeName}-todos-${s}-v${plan.version}.${ext}`;
+  }
   return `${safeName}-v${plan.version}.${ext}`;
 }
 function toMsProjectXml(plan, sched, cal = NATURAL_CALENDAR) {
@@ -49333,6 +49349,131 @@ function toCsv(plan, sched) {
   }
   return `\uFEFF${lines.join("\r\n")}\r
 `;
+}
+function formatExportedAt(iso) {
+  const d = new Date(iso);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+function peopleOrDash(v) {
+  const list = normalizePeople(v);
+  return list.length === 0 ? "\u2014" : formatPeople(list);
+}
+function deriveFromLabel(d) {
+  switch (d) {
+    case "INPUT":
+      return "\u624B\u52A8";
+    case "DEP":
+      return "\u4F9D\u8D56";
+    case "ROLLUP":
+      return "\u6C47\u603B";
+    case "ANCHOR":
+      return "\u951A\u70B9";
+    case "MIXED":
+      return "\u6DF7\u5408";
+    default:
+      return "\u2014";
+  }
+}
+function toTodosMarkdown(plan, sched, opts) {
+  const exportedAt = opts.exportedAt ?? (/* @__PURE__ */ new Date()).toISOString();
+  const me = (opts.me ?? "").trim();
+  const order = Array.isArray(sched.order) && sched.order.length > 0 ? sched.order : plan.tasks.map((t) => t.id);
+  const tasksInOrder = [];
+  for (const id of order) {
+    const t = plan.tasks.find((x) => x.id === id);
+    if (!t) continue;
+    if (opts.scope === "mine" && !isMine(t, me)) continue;
+    tasksInOrder.push(t);
+  }
+  const meKey = me.toLowerCase();
+  let totalTodos = 0;
+  let doneTodos = 0;
+  let mineTodos = 0;
+  for (const t of tasksInOrder) {
+    for (const td of t.todos ?? []) {
+      totalTodos += 1;
+      if (td.done) doneTodos += 1;
+      if (meKey !== "" && td.assignee && td.assignee.trim().toLowerCase() === meKey) mineTodos += 1;
+    }
+  }
+  const lines = [];
+  lines.push(`# ${plan.name || "\u672A\u547D\u540D\u8BA1\u5212"} v${plan.version} \u2014 TODO \u6E05\u5355`);
+  lines.push("");
+  lines.push(`| \u5B57\u6BB5 | \u503C |`);
+  lines.push(`| --- | --- |`);
+  lines.push(`| \u5BFC\u51FA\u65F6\u95F4 | ${formatExportedAt(exportedAt)} |`);
+  if (opts.scope === "mine") {
+    lines.push(`| \u8303\u56F4 | \u4EC5\u4E0E\u6211\u76F8\u5173\uFF08${me || "\u672A\u6307\u5B9A"}\uFF09 |`);
+  } else {
+    lines.push(`| \u8303\u56F4 | \u5168\u90E8 |`);
+  }
+  lines.push(`| \u8BA1\u5212\u4EFB\u52A1\u6570 | ${plan.tasks.length} |`);
+  lines.push(`| \u547D\u4E2D\u4EFB\u52A1\u6570 | ${tasksInOrder.length} |`);
+  lines.push(`| TODO \u603B\u6570 | ${totalTodos}\uFF08\u5DF2\u5B8C\u6210 ${doneTodos} / \u672A\u5B8C\u6210 ${totalTodos - doneTodos}\uFF09 |`);
+  if (opts.scope === "mine") {
+    lines.push(`| \u6211\u8D1F\u8D23\u7684 TODO | ${mineTodos} |`);
+  }
+  lines.push("");
+  if (tasksInOrder.length === 0) {
+    if (opts.scope === "mine") {
+      lines.push(`> \u5F53\u524D\u7528\u6237\u300C${me || "\u672A\u6307\u5B9A"}\u300D\u5728\u672C\u8BA1\u5212\u4E2D\u6CA1\u6709\u8D1F\u8D23\u6216\u987E\u95EE\u4EFB\u52A1\uFF0CTODO \u6E05\u5355\u4E3A\u7A7A\u3002`);
+    } else {
+      lines.push(`> \u672C\u8BA1\u5212\u6CA1\u6709\u4EFB\u52A1\u3002`);
+    }
+    lines.push("");
+    return lines.join("\n");
+  }
+  lines.push("---");
+  lines.push("");
+  for (const t of tasksInOrder) {
+    const c = sched.computed[t.id];
+    const todos = (t.todos ?? []).slice().sort((a, b) => a.order - b.order);
+    const { done, total } = todosProgress(todos);
+    const taskId = t.id ? `\`${t.id}\`` : "";
+    const name = t.name && t.name.trim() !== "" ? t.name : "\u672A\u547D\u540D\u4EFB\u52A1";
+    lines.push(`## ${name}${taskId !== "" ? ` ${taskId}` : ""}`);
+    lines.push("");
+    const meta = [];
+    if (c) {
+      const dates = `${c.start} ~ ${c.end}`;
+      const dur = formatDuration(c.duration);
+      const progress = typeof t.progress === "number" ? ` \xB7 \u8FDB\u5EA6 ${Math.round(t.progress)}%` : "";
+      meta.push(`${dates} \xB7 ${dur ? `${dur} \u5DE5\u4F5C\u65E5` : "\u5373\u65F6\u70B9"}${progress}`);
+    }
+    const owners = peopleOrDash(t.owner);
+    const consultants = peopleOrDash(t.consultant);
+    meta.push(`\u8D1F\u8D23\u4EBA\uFF1A${owners} \xB7 \u987E\u95EE\u4EBA\uFF1A${consultants}`);
+    if (c) {
+      meta.push(`\u6765\u6E90\uFF1A${deriveFromLabel(c.derivedFrom)}`);
+    }
+    if (typeof t.note === "string" && t.note.trim() !== "") {
+      meta.push(`\u5907\u6CE8\uFF1A${t.note.trim()}`);
+    }
+    lines.push(`> ${meta.join("  \n> ")}`);
+    lines.push("");
+    if (total === 0) {
+      lines.push("TODO\uFF080/0\uFF09\uFF1A");
+      lines.push("");
+      lines.push("- \uFF08\u65E0 TODO\uFF09");
+      lines.push("");
+    } else {
+      lines.push(`TODO\uFF08${done}/${total}\uFF09\uFF1A`);
+      lines.push("");
+      for (const td of todos) {
+        const mark = td.done ? "[x]" : "[ ]";
+        const who = td.assignee ? ` \u2014 ${td.assignee}` : "";
+        lines.push(`- ${mark} ${td.text}${who}`);
+      }
+      lines.push("");
+    }
+    lines.push("---");
+    lines.push("");
+  }
+  while (lines.length > 0 && lines[lines.length - 1] === "---") {
+    lines.pop();
+  }
+  return lines.join("\n");
 }
 
 // server/storage.ts
@@ -49989,17 +50130,38 @@ function createApiRouter() {
     asyncHandler((req, res) => {
       const planId = String(req.params.planId);
       requirePlanExists(planId);
-      const format = String(req.query.format ?? "mspdi").toLowerCase() === "csv" ? "csv" : "mspdi";
+      const formatRaw = String(req.query.format ?? "mspdi").toLowerCase();
+      const format = formatRaw === "csv" ? "csv" : formatRaw === "md" ? "md" : "mspdi";
       const plan = readPlanFresh(planId);
       const cal = buildServerCalendar();
       const sched = schedulePlan(plan, cal);
-      const filename = exportFileName(plan, format);
       if (format === "csv") {
+        const filename2 = exportFileName(plan, "csv");
         res.setHeader("Content-Type", "text/csv; charset=utf-8");
-        res.setHeader("Content-Disposition", contentDisposition(filename));
+        res.setHeader("Content-Disposition", contentDisposition(filename2));
         res.status(200).send(toCsv(plan, sched));
         return;
       }
+      if (format === "md") {
+        const scope = req.query.scope === "mine" ? "mine" : "all";
+        const meRaw = typeof req.query.user === "string" ? req.query.user : "";
+        const me = meRaw.trim();
+        if (scope === "mine" && me === "") {
+          res.status(400).json({ code: 4001, message: "scope=mine \u9700\u8981\u540C\u65F6\u4F20 user=<name>" });
+          return;
+        }
+        const filename2 = exportFileName(plan, "md", scope);
+        res.setHeader("Content-Type", "text/markdown; charset=utf-8");
+        res.setHeader("Content-Disposition", contentDisposition(filename2));
+        res.status(200).send(
+          toTodosMarkdown(plan, sched, {
+            scope,
+            ...scope === "mine" ? { me } : {}
+          })
+        );
+        return;
+      }
+      const filename = exportFileName(plan, "mspdi");
       res.setHeader("Content-Type", "application/xml; charset=utf-8");
       res.setHeader("Content-Disposition", contentDisposition(filename));
       res.status(200).send(toMsProjectXml(plan, sched, cal));

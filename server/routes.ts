@@ -32,7 +32,7 @@ import {
   type WorkCalendar,
 } from '../shared/types';
 import { config, scheduleOptionsFromConfig } from './config';
-import { exportFileName, toCsv, toMsProjectXml } from './exporters';
+import { exportFileName, toCsv, toMsProjectXml, toTodosMarkdown, type TodoExportScope } from './exporters';
 import { lockService } from './lockService';
 import * as calendarService from './calendarService';
 import { historyRepo, planRepo, todoRepo } from './storage';
@@ -342,19 +342,47 @@ export function createApiRouter(): Router {
     asyncHandler((req, res) => {
       const planId = String(req.params.planId);
       requirePlanExists(planId);
-      const format = (String(req.query.format ?? 'mspdi').toLowerCase() as ExportFormat) === 'csv' ? 'csv' : 'mspdi';
+      const formatRaw = String(req.query.format ?? 'mspdi').toLowerCase();
+      const format: ExportFormat =
+        formatRaw === 'csv' ? 'csv' : formatRaw === 'md' ? 'md' : 'mspdi';
       const plan = readPlanFresh(planId);
       // 真实工作日历：排程与导出共用同一份（单一真源），绝不 fallback NATURAL
       const cal = buildServerCalendar();
       const sched = schedulePlan(plan, cal);
-      const filename = exportFileName(plan, format);
 
       if (format === 'csv') {
+        const filename = exportFileName(plan, 'csv');
         res.setHeader('Content-Type', 'text/csv; charset=utf-8');
         res.setHeader('Content-Disposition', contentDisposition(filename));
         res.status(200).send(toCsv(plan, sched));
         return;
       }
+      if (format === 'md') {
+        // scope 默认 all；user 仅在 scope=mine 时有意义
+        const scope: TodoExportScope = req.query.scope === 'mine' ? 'mine' : 'all';
+        const meRaw = typeof req.query.user === 'string' ? req.query.user : '';
+        const me = meRaw.trim();
+        if (scope === 'mine' && me === '') {
+          // 400：缺身份无意义（前端菜单已禁用，这里兜底）
+          res.status(400).json({ code: 4001, message: 'scope=mine 需要同时传 user=<name>' });
+          return;
+        }
+        const filename = exportFileName(plan, 'md', scope);
+        res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+        res.setHeader('Content-Disposition', contentDisposition(filename));
+        res
+          .status(200)
+          .send(
+            toTodosMarkdown(plan, sched, {
+              scope,
+              ...(scope === 'mine' ? { me } : {}),
+            }),
+          );
+        return;
+      }
+
+      // mspdi
+      const filename = exportFileName(plan, 'mspdi');
       res.setHeader('Content-Type', 'application/xml; charset=utf-8');
       res.setHeader('Content-Disposition', contentDisposition(filename));
       res.status(200).send(toMsProjectXml(plan, sched, cal));

@@ -449,3 +449,51 @@ afterEach(() => { cleanup(); });
 
 **推论**：协作需求先判断「该数据是否真的需要强一致排他锁」。todo 因「不进排程、字段极简、改动单向只增」天然可交换/幂等，才适合拆出并发；主计划仍保留一人排他锁。别一刀切放宽全局锁。
 
+### 7.20 UI 视觉修复必须用 playwright 实测渲染，不能只看 CSS 改动 + grep 特征
+
+**场景**：U04 后用户反馈「开始/结束列日历 logo 与数据显示的数据重合」。第一直觉是「列太窄」+「input 文本溢出」。
+
+**第一版修复（失败）**：把 start/end 列默认宽 96→112、最小 84→104，给 `.pg-date-wrap .pg-input` 加 `overflow:hidden; text-overflow:ellipsis`。代码改完 build 也过，grep 也命中特征——但**视觉回归全 false**。
+
+**真正根因（playwright boundingBox + scrollWidth 测出来才看见）**：
+- `CellInput` 在 `tip !== ''` 时返回 `<Tooltip><span class="w-full">{input}</span></Tooltip>`，input **不在 flex 容器的直接子级**。
+- 于是 `.pg-date-wrap .pg-input { flex: 1 1 auto; min-width: 0 }` 对 input 完全不起作用（flex 容器看不到它）。
+- input 自己 `width: auto` 用的是 HTML input 的固有 size（≈180–184px），远远溢出列宽 112px，盖住右侧日历按钮。
+- 第一版只调列宽——input 宽度根本没动，overlap 依然 true。
+
+**正解（三件套，缺一不可）**：
+1. `.pg-date-wrap .pg-input { width: 100% }` —— 让 input 跟随父 `<span>` 收缩，而不是用固有宽度。
+2. `.pg-date-wrap > span { overflow: hidden }` —— 兜底裁剪。
+3. 列宽 def/min 提到能装下日期 + 按钮 + gap 的尺寸（最终 def 128, min 108），且 input 左右 padding `0 4px → 0 2px` 省 4px 让文本刚好放进。
+
+**教训（方法论）**：
+- **CSS 改动 ≠ 视觉修复**。grep 命中特征只能证明「代码写了」，不能证明「渲染对」。
+- 任何 UI 视觉修复（重叠/截断/对齐/溢出）都必须用 playwright 起真实 Chromium 测量 `boundingBox` + `scrollWidth/clientWidth`，否则容易自欺欺人。
+- 「flex 容器里的元素」检查 DOM 层级时，要看它是不是容器的**直接子元素**——包了一层 `<span>`（哪怕只是个 Tooltip wrapper）就足以让 flex 规则落空。
+
+### 7.21 MD 导出走 server-side，与 mspdi/csv 共用 computed 字段
+
+**场景**：U05 增量「TODO 清单导出 Markdown」。第一直觉是「客户端纯浏览器，下载走 Blob/URL.createObjectURL」——简单、无服务端改动。
+
+**为什么最终选了 server-side**：
+- **日期/时长口径与表格/甘特完全一致**：客户端只有 raw `task.input.*`（用户填的），没有 `sched.computed`（系统算的）。MSPDI/CSV 都用 computed 字段保证「UI 看到啥、导出就是啥」。MD 走客户端会让"依赖触发的派生日期"对不上——例：FS 依赖下 input.start 为空，实际 start 是依赖计算出来的。
+- **filter 语义共用 `isMine`**：`isMine(task, me)` 已存在于 `src/filter.ts`（U03「Assign to me」用）。如果客户端做，就要么把 `isMine` 暴露给 MD 生成、要么在服务端重写一份。`shared/people.isMine` 抽出来后，前后端共用一份，零语义漂移。
+- **空值兜底**：服务端有 `requirePlanExists`、可拒绝 `scope=mine` 但缺 `user`（4001 错误码）、可做计划级权限；客户端权限边界模糊。
+- **文件大小可控**：MD 走 server-side 后端压缩；客户端生成大文件会卡 UI。
+
+**关键设计**：
+- `ExportFormat` 扩 `'md'`；`exportFileName(plan, format, scope?)` 单独给 MD 拼 `-todos-{scope}-v{N}.md`，scope 显式 `all` / `mine` 段——避免用户下载两次后分不清。
+- 路由分支：现有 `format === 'csv'` / `format === 'md'`，三者互不耦合；md 加 `?scope=...&user=...` 双 query。
+- `isMine` 从 `src/filter.ts` 提到 `shared/people.ts`，`src/filter.ts` 仅 re-export；旧 `import { isMine } from '../filter'` 调用点零改动。
+- **不动 `TodoItem` 数据结构**——这是 U04 的不变量（todo 不进排程、不进资源），MD 导出只是「读取 + 文本化」。
+
+**测试覆盖**：
+- 纯函数 11 例（`toTodosMarkdown`）覆盖 scope、isMine 大小写/空格、U04 不变量干扰、sched.order、空计划、空 mine 命中、assignee 缺失、进度、备注、来源。
+- 集成 4 例覆盖菜单入口、mine 禁用、URL 拼装、取消关闭。
+- mspdi/csv **回归 0 失败**——证明 exportFileName 改造没破坏旧调用。
+
+**反向教训（避免）**：
+- 看到新功能就「先纯客户端」会埋雷：第一次加 U05 时若选客户端，后续 U06/U07 类似导出（PDF/HTML 周报等）会重复发明 isMine 逻辑、错过服务端校验、丢 computed 字段。**能走服务端就别走客户端**，除非数据真的只在浏览器有。
+- **纯函数要测 U04 不变量**：测试 `mine` 任务计数时，若 todo.assignee 不在 owner 里，`enforceTodoOwnerConsistency` 会把它自动并入 owner，进而改变 isMine 结果。测试 setup 要么 owner 提前含 assignee、要么换 user。
+
+
