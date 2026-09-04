@@ -19,12 +19,27 @@ export interface ScheduleCfg {
   defaultDuration: string;
 }
 
+/** 保存后自动同步到共享端（仅 Mac 本地开发机开启；共享端/Windows 默认关闭） */
+export interface AutoSyncConfig {
+  /** 总开关 */
+  enabled: boolean;
+  /** 需要同步的计划名（精确匹配 plan.name） */
+  planNames: string[];
+  /** 共享端 plan-gantt 的 data 目录（程序读取位置，绝对路径） */
+  shareDataDir: string;
+  /** 共享端三件套导出目录（PM tool/Project-A，绝对路径） */
+  shareExportDir: string;
+  /** 防抖毫秒：多次保存合并为一次同步 */
+  debounceMs: number;
+}
+
 export interface AppConfig {
   port: number;
   /** 绝对路径 */
   dataDir: string;
   lock: LockCfg;
   schedule: ScheduleCfg;
+  autoSync: AutoSyncConfig;
   /** 项目根（绝对路径） */
   projectRoot: string;
   /** 前端构建产物目录（绝对路径） */
@@ -38,6 +53,13 @@ const DEFAULTS = {
   dataDir: './data',
   lock: { timeoutMs: 30_000, heartbeatMs: 10_000, sweepMs: 5_000, pollMs: 5_000 } as LockCfg,
   schedule: { anchorDate: 'TODAY', defaultDuration: '1d' } as ScheduleCfg,
+  autoSync: {
+    enabled: false,
+    planNames: [] as string[],
+    shareDataDir: '',
+    shareExportDir: '',
+    debounceMs: 4000,
+  } as AutoSyncConfig,
 };
 
 /** server/ 的上一级即项目根 */
@@ -48,20 +70,26 @@ interface RawFileConfig {
   dataDir?: string;
   lock?: Partial<LockCfg>;
   schedule?: Partial<ScheduleCfg>;
+  autoSync?: Partial<AutoSyncConfig>;
 }
 
-function readFileConfig(): RawFileConfig {
-  const file = process.env.CONFIG_FILE
-    ? path.resolve(PROJECT_ROOT, process.env.CONFIG_FILE)
-    : path.resolve(PROJECT_ROOT, 'config/app.config.json');
+function readJsonConfig(relPath: string): RawFileConfig {
+  const file = path.resolve(PROJECT_ROOT, relPath);
   try {
     if (!fs.existsSync(file)) return {};
     return JSON.parse(fs.readFileSync(file, 'utf8')) as RawFileConfig;
   } catch (e) {
     // 配置文件损坏不应阻断启动，退回默认值并告警
-    console.warn(`[config] 读取配置文件失败，使用默认值：${String(e)}`);
+    console.warn(`[config] 读取配置文件失败（${relPath}）：${String(e)}`);
     return {};
   }
+}
+
+function readFileConfig(): RawFileConfig {
+  // 基础配置（可用 CONFIG_FILE 环境变量覆盖），再叠加本地专属覆盖（不进部署、不入库）
+  const base = readJsonConfig(process.env.CONFIG_FILE ?? 'config/app.config.json');
+  const local = readJsonConfig('config/app.config.local.json');
+  return { ...base, ...local };
 }
 
 function envInt(name: string, fallback: number): number {
@@ -102,11 +130,22 @@ export function load(): AppConfig {
       process.env.DEFAULT_DURATION ?? file.schedule?.defaultDuration ?? DEFAULTS.schedule.defaultDuration,
   };
 
+  const autoSync: AutoSyncConfig = {
+    enabled: file.autoSync?.enabled === true,
+    planNames: Array.isArray(file.autoSync?.planNames)
+      ? (file.autoSync!.planNames as unknown[]).filter((n): n is string => typeof n === 'string')
+      : [],
+    shareDataDir: typeof file.autoSync?.shareDataDir === 'string' ? file.autoSync.shareDataDir : '',
+    shareExportDir: typeof file.autoSync?.shareExportDir === 'string' ? file.autoSync.shareExportDir : '',
+    debounceMs: envInt('AUTO_SYNC_DEBOUNCE_MS', file.autoSync?.debounceMs ?? DEFAULTS.autoSync.debounceMs),
+  };
+
   const cfg: AppConfig = {
     port,
     dataDir: path.resolve(PROJECT_ROOT, dataDirRaw),
     lock,
     schedule: scheduleCfg,
+    autoSync,
     projectRoot: PROJECT_ROOT,
     distDir: path.resolve(PROJECT_ROOT, 'dist'),
     appVersion: readAppVersion(),

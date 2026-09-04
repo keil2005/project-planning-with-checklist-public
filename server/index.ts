@@ -77,6 +77,11 @@ function main(): void {
     console.info(` DATA_DIR : ${config.dataDir}`);
     console.info(` 用户名单 : ${BUILTIN_USERS.length} 人 (系统内置)`);
     console.info(` 锁参数   : timeout=${config.lock.timeoutMs}ms heartbeat=${config.lock.heartbeatMs}ms sweep=${config.lock.sweepMs}ms`);
+    console.info(
+      config.autoSync.enabled
+        ? ` 自动同步 : 已启用 → ${config.autoSync.shareDataDir}（planNames=${config.autoSync.planNames.join(',')}，防抖 ${config.autoSync.debounceMs}ms）`
+        : ' 自动同步 : 未启用',
+    );
     console.info(` 静态目录 : ${fs.existsSync(path.join(config.distDir, 'index.html')) ? config.distDir : '(未构建，仅 API)'}`);
     // MPP 导入为「按需启用」能力：默认未启用（零依赖部署），此处把原因打印出来，
     // 免得用户看到导入按钮报 501 时无从下手。

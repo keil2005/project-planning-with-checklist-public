@@ -37,6 +37,7 @@ import { lockService } from './lockService';
 import * as calendarService from './calendarService';
 import { historyRepo, planRepo, todoRepo } from './storage';
 import { importMppFile, mppImportStatus } from './mppImport';
+import { notifyPlanChanged } from './autoSync';
 
 /** 全局工作日历保留资源 id（与 per-plan 锁相互独立，互不阻塞） */
 const GLOBAL_CALENDAR = 'GLOBAL_CALENDAR';
@@ -270,6 +271,7 @@ export function createApiRouter(): Router {
 
       const payload: SavePlanResp = { plan: entry.planSnapshot, version: entry.version };
       ok(res, payload);
+      notifyPlanChanged(planId);
     }),
   );
 
@@ -333,6 +335,7 @@ export function createApiRouter(): Router {
 
       const payload: SavePlanResp = { plan: entry.planSnapshot, version: entry.version };
       ok(res, payload);
+      notifyPlanChanged(planId);
     }),
   );
 
@@ -496,6 +499,7 @@ export function createApiRouter(): Router {
 
       const resp = todoRepo.applyOp(planId, taskId, rawOp);
       ok(res, resp);
+      notifyPlanChanged(planId);
     }),
   );
 

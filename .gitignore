@@ -8,3 +8,6 @@ data/
 # MPXJ 桥接（仅本机 Java 环境；Windows 零配置共享包不含此目录，导入自动 501）
 server/mpxj/lib/
 server/mpxj/*.class
+
+# 本地专属配置（Mac 开发机开启自动同步；不进部署、不入库）
+config/app.config.local.json
