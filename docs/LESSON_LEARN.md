@@ -496,4 +496,25 @@ afterEach(() => { cleanup(); });
 - 看到新功能就「先纯客户端」会埋雷：第一次加 U05 时若选客户端，后续 U06/U07 类似导出（PDF/HTML 周报等）会重复发明 isMine 逻辑、错过服务端校验、丢 computed 字段。**能走服务端就别走客户端**，除非数据真的只在浏览器有。
 - **纯函数要测 U04 不变量**：测试 `mine` 任务计数时，若 todo.assignee 不在 owner 里，`enforceTodoOwnerConsistency` 会把它自动并入 owner，进而改变 isMine 结果。测试 setup 要么 owner 提前含 assignee、要么换 user。
 
+### 7.22 保存后自动同步（autoSync）：本地专属配置 + rsync 三坑 + bash 全角标点
+
+**场景**：用户「保存 Project-A 计划后自动同步到共享端」。这是「程序读取位 `data/plans/` + 团队三件套 `PM tool/Project-A/`」两处同步，且只对 Mac 本地开发机生效、共享端/Windows 不生效。
+
+**关键设计（三层配置 + 本地专属覆盖）**：
+- `config/app.config.json`（基础，随部署）+ `config/app.config.local.json`（本地专属，gitignored + deploy rsync 排除）合并成最终配置：`readFileConfig() = {...readJsonConfig('app.config.json'), ...readJsonConfig('app.config.local.json')}`。
+- **本地专属配置不入库、不部署**：Windows 共享端无 rsync、且 `/Volumes/dev` 是 Mac 挂载点，若把 local 配置带到 Windows 会误触发 rsync 到不存在的路径。默认 `enabled=false`，共享端启动日志「自动同步 : 未启用」。
+- 触发点挂 `notifyPlanChanged(planId)` 在「保存 / 回滚 / todo 变更」三处 `ok()` 之后，`Map<planId, Timeout>` 防抖（默认 4s）合并连续保存；`execFile('rsync')` 异步 fire-and-forget，失败仅 `console.warn` 不阻断保存。
+- 复用 `readPlanFresh`（合并 todos）+ `schedulePlan`（服务端权威排程）→ 三件套日期/工期与 mspdi/csv 严格一致，不另起炉灶。
+
+**踩坑（rsync 三连，已修）**：
+1. `--delete` 用「文件列表」源（`rsync -a --delete f1 f2 f3 dest/`）**不删 dest 里的旧版本号残留** → 改 `mktemp -d` 临时目录放三件套 + `rsync -a --delete tmpdir/ dest/`。
+2. SMB 不支持原子 rename → rsync 默认产生 `.xxx.随机后缀` 临时残留（safe-delete 还拦 `rm`）→ 传输一律加 `--inplace`。
+3. 清理 SMB 上的残留文件用 `rsync -a --delete --inplace 源/ 目标/`，别指望 `rm`（报 "Operation not permitted"）。
+
+**踩坑（bash 全角标点）**：`"v$VER）"` 变量名后紧跟全角右括号（无空格、无 `${}`），bash 把全角标点首字节并入变量名 → `VER�: unbound variable`。修法：`"v${VER}）"`。中文标点紧贴变量名时一律 `${VAR}`。
+
+**踩坑（deploy exclude 要同步维护）**：每次新增「本地专属」文件（如 `config/app.config.local.json`、`.test-imports-backup-*/`），deploy 的 `rsync --delete` exclude 列表必须同步加上，否则 `--delete` 会把本地垃圾带进共享端、甚至触发错误行为。
+
+**验证方法**：端到端 curl 打一条假 todo → 等防抖 → 查共享端 todos.json revision 递增 + 三件套时间戳刷新 → 删假 todo 恢复原状；共享端起临时端口冒烟确认「自动同步 : 未启用」+ `/api/plans` 能列出目标计划。
+
 
