@@ -84,6 +84,40 @@ async function request<T>(path: string, method = 'GET', body?: unknown): Promise
   return payload.data as T;
 }
 
+/**
+ * 允许 401 / 未登录的探测请求：返回 null，不抛错。
+ * 用于 /auth/me、/workspaces/invites/:token 等公开接口。
+ */
+async function requestAllow401<T>(path: string, method = 'GET', body?: unknown): Promise<T | null> {
+  const init: RequestInit = {
+    method,
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+  };
+  if (body !== undefined) init.body = JSON.stringify(body);
+
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, init);
+  } catch (e) {
+    return null;
+  }
+
+  let payload: ApiResp<T> | null = null;
+  try {
+    payload = (await res.json()) as ApiResp<T>;
+  } catch {
+    return null;
+  }
+
+  if (!payload) return null;
+  if (res.status === 401 || payload.code === 4401) return null;
+  if (payload.code !== ErrCode.OK) {
+    throw new ApiError(payload.code, payload.message ?? `HTTP ${res.status}`, payload.data);
+  }
+  return payload.data as T;
+}
+
 export const api = {
   health(): Promise<HealthInfo> {
     return request<HealthInfo>('/health');
