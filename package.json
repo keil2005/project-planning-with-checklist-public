@@ -1,14 +1,26 @@
 {
-  "name": "plan-gantt",
+  "name": "project-planning-with-checklist",
+  "displayName": "Project Planning with Checklist",
   "private": true,
-  "version": "1.1.1",
-  "description": "内部轻量项目管理 / 甘特图计划工具（单页 Web App + Node 中心化服务 + 文件型 JSON 存储）",
-  "license": "UNLICENSED",
+  "version": "1.2.0",
+  "description": "轻量协作式项目计划工具：甘特图 + 任务验收清单 + 团队花名册（单页 Web App + Node 中心化服务 + 文件型 JSON 存储）",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Keil Zheng",
+    "email": "keil2005@126.com"
+  },
+  "homepage": "https://github.com/keilzheng/project-planning-with-checklist",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/keilzheng/project-planning-with-checklist.git"
+  },
   "scripts": {
     "dev": "concurrently -n web,api -c cyan,magenta \"vite\" \"tsx watch server/index.ts\"",
     "dev:web": "vite",
     "dev:server": "tsx watch server/index.ts",
-    "build": "tsc --noEmit && vite build",
+    "build": "vite build && ./build-server-bundle.sh",
+    "build:web": "vite build",
+    "build:server": "./build-server-bundle.sh",
     "start": "tsx server/index.ts",
     "preview": "vite preview",
     "test": "vitest run",

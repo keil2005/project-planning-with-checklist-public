@@ -1,4 +1,4 @@
-# LESSON LEARN · plan-gantt（MPP 导入 + 跨平台部署）
+# LESSON LEARN · Project Planning with Checklist（MPP 导入 + 跨平台部署）
 
 > 记录本次「MPP 导入功能」从实现、真实验证到 Windows 共享盘部署过程中的关键决策、踩坑与可复用经验。供后续维护与复盘参考。
 
@@ -54,7 +54,7 @@
 - **教训**：Windows 共享包定位「自带 Node」时，**路径模板必须同时覆盖 USERPROFILE/LOCALAPPDATA 与「有无 bin\」两种形态**，不能只赌一种布局；再加固定版本兜底最稳。
 
 **坑 B：UNC 不能作为 cmd 当前目录（报「缺少预打包服务文件」）**
-- **现象**：从 UNC 路径 `\\192.0.2.8\r&d\00 public\PM tool\plan-gantt` 直接双击/运行时，先报 `CMD does not support UNC paths as current directories`，继而报「缺少预打包服务文件 server-build\server.cjs」。
+- **现象**：从 UNC 路径 `\\<file-server>\<share>\plan-gantt` 直接双击/运行时，先报 `CMD does not support UNC paths as current directories`，继而报「缺少预打包服务文件 server-build\server.cjs」。
 - **根因**：脚本用 `cd /d %~dp0` 切到脚本所在目录；但当脚本本身位于 UNC 共享路径时，cmd **拒绝把 UNC 设为当前目录**，`cd` 失败退回 Windows 目录（如 `C:\Windows`），于是相对路径 `server-build\server.cjs` 解析不到 → 误报「缺文件」。
 - **修复**：改用 **`pushd "%~dp0"`**。pushd 对 UNC 会自动映射一个临时盘符并 cd 过去，是 UNC 启动的标准解法；脚本结尾 `popd` 清理；`pushd` 失败用 `if errorlevel 1` 兜底提示「共享盘不可访问」。
 - **教训**：**凡涉及「共享盘/UNC」部署的 Windows 启动器，必须用 `pushd "%~dp0"` 而非 `cd /d %~dp0`**；`cd` 对 UNC 无效。这样用户从 UNC 网络位置直接双击也能跑，**无需先映射盘符**。
@@ -149,8 +149,8 @@ rsync -a --delete --delete-excluded \
   ```powershell
   $s = New-Object -ComObject WScript.Shell
   $l = $s.CreateShortcut("plan-gantt 一键启动.lnk")
-  $l.TargetPath = '\\192.0.2.8\r&d\00 public\PM tool\plan-gantt\start-plan-gantt v1.1.0.bat'
-  $l.WorkingDirectory = 'C:\Users\User01.Zheng'; $l.Save()
+  $l.TargetPath = '\\<file-server>\<share>\plan-gantt\start-plan-gantt v1.1.0.bat'
+  $l.WorkingDirectory = "$env:USERPROFILE"; $l.Save()
   ```
 - **自动开浏览器**：真 bat 在启动服务前加 `start "" cmd /c "ping -n 3 127.0.0.1 >nul && start http://localhost:3001"`，服务监听后约 2 秒自动打开默认浏览器，进一步贴近「一键」。
 

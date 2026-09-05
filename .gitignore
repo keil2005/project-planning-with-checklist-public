@@ -11,3 +11,12 @@ server/mpxj/*.class
 
 # 本地专属配置（Mac 开发机开启自动同步；不进部署、不入库）
 config/app.config.local.json
+
+# 内网专属部署材料（共享盘启动器 / 内网主机名 / SMB 路径等；公开仓库不入）
+deploy/internal/
+
+# 跑测试时临时产生的导入备份目录
+.test-imports-backup-*/
+
+# CI 临时文件
+.workbuddy/
