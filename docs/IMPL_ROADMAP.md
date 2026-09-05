@@ -110,11 +110,11 @@
 
 | ID | Feature | 工程 | 验收 | 状态 |
 |---|---|---|---|---|
-| **PRIV-1** | `data/` 加入 `.gitignore`（防止真实业务代号入库） | 0.05d | `git check-ignore data/plans/*` 返回真实路径 | TODO |
-| **PRIV-2** | `git filter-repo --mailmap` 重写 `user01@example.com` → 个人邮箱 | 0.3d | `git log --format='%ae' | sort -u` 不再有 公司邮箱域名 | TODO |
+| **PRIV-1** | `data/` 加入 `.gitignore`（防止真实业务代号入库） | 0.05d | `git check-ignore data/plans/*` 返回真实路径 | DONE |
+| **PRIV-2** | `git filter-repo --mailmap` 重写 `user01@example.com` → 个人邮箱 | 0.3d | `git log --format='%ae' | sort -u` 不再有 公司邮箱域名 | DONE |
 | **PRIV-3** | 部署脚本路径脱敏（`plan-gantt 一键启动 v1.1.1.cmd` `start-plan-gantt v1.1.1.bat` 占位符化；移入 `deploy/internal/` 不入库） | 0.3d | SMB 路径 `\\192.0.2.8\r&d\` 字符串在仓库内**0 命中** | TODO |
 | **PRIV-4** | README/LESSON_LEARN/各 docs 中 公司内网路径替换为 `<your-server>/<your-share>` | 0.2d | `grep -rIn "200\.200\.200\.8\|192\.168\.129\.2\|HN-JAGUAR" --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=data` 返回空 | TODO |
-| **PRIV-5** | LICENSE 引用 + NOTICE（如有第三方 attribution） | 0.1d | LICENSE 在仓库根；NOTICE 仅在需要时创建 | TODO |
+| **PRIV-5** | LICENSE 引用 + NOTICE（如有第三方 attribution） | 0.1d | LICENSE 在仓库根；NOTICE 仅在需要时创建 | DONE |
 | **PRIV-6** | `npm audit --omit=dev` 在 CI 跑；HIGH/CRITICAL 阻塞 merge | 0.1d | CI 出现 GHSA-xxxx → fail | TODO |
 
 **子小计**：1.05 人·天

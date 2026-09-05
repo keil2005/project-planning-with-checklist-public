@@ -42,7 +42,7 @@
 ### Changed
 - 项目 `package.json`：`name` / `displayName` / `repository` / `author` / `homepage` 全套指向新仓库
 - `index.html` 标题与 description
-- `git config user.email = keil2005@126.com`（历史 commit 用 filter-repo 重写保留为 optional 步骤）
+- `git config user.email = keil2005@126.com`，全部 15 条历史 commit 的 author/committer 邮箱为个人邮箱（commit message 不变；hash 因元数据变化整体重写）
 - `SECURITY.md` / `CONTRIBUTING.md` 全文 `plan-gantt` → `Project Planning with Checklist` + 商标隔离
 - `docs/LICENSE_NOTES.md` 解释 Apache-2.0 而非 AGPL-3.0 / MIT 决策
 
