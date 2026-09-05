@@ -40,7 +40,19 @@ describe('P0-A 负责人单元格不闪退', () => {
       diagnostics: [],
       sched: null,
       dirty: false,
-    });
+      // v1.2.0 起：人员候选来自 workspace members（不再有 BUILTIN_USERS）。
+      users: ['User01'],
+      workspaces: [
+        {
+          workspaceId: 'ws-test',
+          name: 'test',
+          members: [{ userId: 'u-user01', displayName: 'User01', role: 'owner' }],
+          createdBy: 'u-user01',
+          createdAt: '2026-08-26T00:00:00.000Z',
+        },
+      ],
+      currentWorkspaceId: 'ws-test',
+    } as Partial<ReturnType<typeof useStore.getState>>);
   });
 
   it('点击负责人→选候选：不抛错且 owner 写入', async () => {

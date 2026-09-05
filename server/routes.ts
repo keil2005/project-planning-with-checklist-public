@@ -13,7 +13,6 @@ import os from 'node:os';
 import path from 'node:path';
 import { hasBlockingError, normalizePlan, schedule } from '../shared/scheduler';
 import { buildWorkCalendar } from '../shared/calendar-build';
-import { BUILTIN_USERS } from '../shared/roster';
 import {
   DomainError,
   ErrCode,
@@ -178,11 +177,11 @@ export function createApiRouter(): Router {
     }),
   );
 
-  /* ---------- 用户名单（系统内置单一真源，见 shared/roster.ts） ---------- */
+  /* ---------- 用户名单（已废弃：人员候选全部来自当前 workspace members） ---------- */
   router.get(
     '/users',
     asyncHandler((_req, res) => {
-      ok(res, [...BUILTIN_USERS]);
+      ok(res, []);
     }),
   );
 

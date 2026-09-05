@@ -12,7 +12,6 @@ import { useMemo } from 'react';
 import { create } from 'zustand';
 import { ApiError, api, releaseLockBeacon } from './api';
 import { buildWorkCalendar } from '../shared/calendar-build';
-import { BUILTIN_USERS } from '../shared/roster';
 import {
   buildIdSeqMaps,
   collectDescendants,
@@ -612,16 +611,14 @@ export const useStore = create<StoreState>((set, get) => {
     },
 
     /**
-     * 把当前 workspace 的成员 displayName 注入 users 数组，让「负责人 / 顾问人」下拉用团队花名册做候选。
-     * 同时保留 BUILTIN_USERS 作为兜底（避免空花名册时下拉空空）。
+     * 把当前 workspace 的成员 displayName 注入 users 数组，让「负责人 / 顾问人 / TODO assignee」
+     * 下拉统一用团队花名册做唯一候选源。
      */
     loadTeamRoster: () => {
       const { workspaces, currentWorkspaceId } = get();
       const ws = workspaces.find((w) => w.workspaceId === currentWorkspaceId);
       const memberNames = ws ? ws.members.map((m) => m.displayName) : [];
-      // 成员名在前，BUILTIN_USERS 去重后兜底在后
-      const merged = [...new Set([...memberNames, ...BUILTIN_USERS])];
-      set({ users: merged });
+      set({ users: memberNames });
     },
 
     setUser: async (name: string) => {
@@ -1391,17 +1388,18 @@ export function useColumnValues(key: ColumnKey): string[] {
 }
 
 /**
- * 人员联想候选：固定名单（原序）+ 本 plan 内已用过的名单外姓名（去重、排其后，P1-5）。
- * 负责人与顾问人共用一份候选（两列的录入范围一致，见 U02）。
+ * 人员联想候选：当前 workspace members + 本 plan 内已用过的非 member 姓名（去重、排其后）。
+ * 负责人 / 顾问人 / TODO assignee 共用一份候选（单一真源）。
  */
 export function useOwnerCandidates(): string[] {
   return useStore((s) => {
-    const base = BUILTIN_USERS as readonly string[];
+    const base = s.users ?? [];
+    const baseSet = new Set(base);
     const extra = new Set<string>();
     if (s.plan) {
       for (const t of s.plan.tasks) {
         for (const p of collectPeople(t)) {
-          if (!base.includes(p)) extra.add(p);
+          if (!baseSet.has(p)) extra.add(p);
         }
       }
     }

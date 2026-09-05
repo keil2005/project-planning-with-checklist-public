@@ -60,14 +60,11 @@ describe('c+e·HTTP 冒烟与版本历史', () => {
     expect(typeof r.data.dataDir).toBe('string');
   });
 
-  it('GET /api/users → 返回内置名单（21 项、原序、无旧用户）', async () => {
+  it('GET /api/users → 返回空数组（v1.2.0 起人员名单来自 workspace members，邀请制）', async () => {
     const r = await api('GET', '/api/users');
     expect(r.code).toBe(0);
     expect(Array.isArray(r.data)).toBe(true);
-    expect(r.data).toHaveLength(21);
-    expect(r.data[0]).toBe('User01');
-    expect(r.data).toContain('External');
-    expect(r.data).not.toContain('Alice');
+    expect(r.data).toHaveLength(0);
   });
 
   it('POST /api/plans（带 notes）→ 创建 v1', async () => {

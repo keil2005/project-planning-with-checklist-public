@@ -43,7 +43,24 @@ function setup(owner: string[] = [], consultant: string[] = []): void {
     diagnostics: [],
     sched: null,
     dirty: false,
-  });
+    // v1.2.0 起：人员候选来自 workspace members（不再有 BUILTIN_USERS）。
+    // 这里直接给一份固定的成员名单作为 autocomplete 候选用。
+    users: ['User01', 'User13', 'User02', 'User08', 'User03'],
+    workspaces: [
+      {
+        workspaceId: 'ws-test',
+        name: 'test',
+        members: [
+          { userId: 'u-user01', displayName: 'User01', role: 'owner' },
+          { userId: 'u-user13', displayName: 'User13', role: 'editor' },
+          { userId: 'u-gu', displayName: 'User02', role: 'editor' },
+        ],
+        createdBy: 'u-user01',
+        createdAt: '2026-08-26T00:00:00.000Z',
+      },
+    ],
+    currentWorkspaceId: 'ws-test',
+  } as Partial<ReturnType<typeof useStore.getState>>);
 }
 
 /** 等 setTimeout(0) 的 deferred unmount + store 落地 */

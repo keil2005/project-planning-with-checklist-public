@@ -9,8 +9,8 @@
  *  1. **落盘形态恒为数组**：归一化统一在 `normalizePlan()` 完成（前后端共用，见 shared/scheduler.ts），
  *     所以业务代码拿到的 task.owner / task.consultant 只可能是 string[]（可能为空数组），
  *     不需要再写 `Array.isArray` 判空——但读取外部 JSON 时仍建议过一遍 normalizePeople。
- *  2. **去重大小写不敏感、保留首次出现的原始写法**：名单固定 21 人（`shared/roster.ts`），
- *     同一个人的 `User01` / `user01` 不应产生两个 Resource；但用户手打的自定义姓名原样保留。
+ *  2. **去重大小写不敏感、保留首次出现的原始写法**：同一个人的 `User01` / `user01` 不应产生两个 Resource，
+ *     但用户手打的自定义姓名原样保留（v1.2.0 起，人员候选改为 workspace 邀请名单，不再有系统固定名单）。
  *  3. **历史字符串自动拆分**：旧数据里若有人手打成 "User01,User13"，按分隔符拆成两人；
  *     单个名字 "User01" 拆完仍是 ["User01"]，无副作用。
  *  4. **顺序即录入顺序**：不做排序，用户先选谁谁在前（导出 Resource 顺序依赖它）。

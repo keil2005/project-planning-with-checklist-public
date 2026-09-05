@@ -49041,31 +49041,6 @@ function buildWorkCalendar(cfg) {
   };
 }
 
-// shared/roster.ts
-var BUILTIN_USERS = [
-  "User01",
-  "User02",
-  "User03",
-  "User04",
-  "User05",
-  "User06",
-  "User07",
-  "User08",
-  "User09",
-  "User10",
-  "User11",
-  "User12",
-  "User13",
-  "User14",
-  "User15",
-  "User16",
-  "User17",
-  "User18",
-  "Group A",
-  "Group B",
-  "External"
-];
-
 // server/exporters.ts
 var import_xmlbuilder2 = __toESM(require_lib7());
 var DEP_TYPE_TO_LINK_TYPE = {
@@ -50104,7 +50079,7 @@ function createApiRouter() {
   router.get(
     "/users",
     asyncHandler((_req, res) => {
-      ok(res, [...BUILTIN_USERS]);
+      ok(res, []);
     })
   );
   router.get(
@@ -51676,10 +51651,10 @@ function main() {
   );
   app.listen(config.port, () => {
     console.info("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500");
-    console.info(` plan-gantt \u670D\u52A1\u5DF2\u542F\u52A8  v${config.appVersion}`);
+    console.info(` Project Planning with Checklist \u670D\u52A1\u5DF2\u542F\u52A8  v${config.appVersion}`);
     console.info(` \u7AEF\u53E3     : ${config.port}`);
     console.info(` DATA_DIR : ${config.dataDir}`);
-    console.info(` \u7528\u6237\u540D\u5355 : ${BUILTIN_USERS.length} \u4EBA (\u7CFB\u7EDF\u5185\u7F6E)`);
+    console.info(" \u4EBA\u5458\u5019\u9009 : \u6765\u81EA\u5F53\u524D workspace members\uFF08\u9080\u8BF7\u5236\uFF09");
     console.info(
       authBoot.adminCreated ? ` \u8EAB\u4EFD\u5C42   : \u5DF2\u521B\u5EFA\u9996\u4F4D admin\uFF08${authBoot.adminUsername}\uFF0C\u6765\u81EA ADMIN_USER/ADMIN_PASSWORD env\uFF09` : " \u8EAB\u4EFD\u5C42   : \u590D\u7528\u73B0\u6709\u7528\u6237\uFF08\u65E0 ADMIN_USER/ADMIN_PASSWORD \u65F6\u8DF3\u8FC7\u81EA\u4E3E\uFF09"
     );

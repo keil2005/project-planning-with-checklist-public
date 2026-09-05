@@ -17,7 +17,6 @@ import { lockService } from './lockService';
 import * as calendarService from './calendarService';
 import { createApiRouter, errorMiddleware } from './routes';
 import { mppImportStatus } from './mppImport';
-import { BUILTIN_USERS } from '../shared/roster';
 import {
   bootstrapAuth,
   bootstrapDemoWorkspace,
@@ -121,10 +120,10 @@ function main(): void {
 
   app.listen(config.port, () => {
     console.info('──────────────────────────────────────────────');
-    console.info(` plan-gantt 服务已启动  v${config.appVersion}`);
+    console.info(` Project Planning with Checklist 服务已启动  v${config.appVersion}`);
     console.info(` 端口     : ${config.port}`);
     console.info(` DATA_DIR : ${config.dataDir}`);
-    console.info(` 用户名单 : ${BUILTIN_USERS.length} 人 (系统内置)`);
+    console.info(' 人员候选 : 来自当前 workspace members（邀请制）');
     console.info(
       authBoot.adminCreated
         ? ` 身份层   : 已创建首位 admin（${authBoot.adminUsername}，来自 ADMIN_USER/ADMIN_PASSWORD env）`

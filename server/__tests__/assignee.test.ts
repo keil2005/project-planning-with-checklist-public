@@ -16,7 +16,6 @@ process.env.LOCK_TIMEOUT_MS = '800';
 process.env.LOCK_SWEEP_MS = '100';
 
 import { createEmptyTask, normalizePlan, schedule } from '../../shared/scheduler';
-import { BUILTIN_USERS } from '../../shared/roster';
 import { SCHEMA_VERSION, type Plan, type Task } from '../../shared/types';
 import { toCsv, toMsProjectXml } from '../exporters';
 
@@ -71,22 +70,6 @@ function buildPlan(tasks: Task[], anchorDate = '2026-08-26'): Plan {
     tasks,
   });
 }
-
-/* ===================== e·GET /api/users 名单接口 ===================== */
-describe('e·GET /api/users 内置名单', () => {
-  it('返回 21 项且顺序与 BUILTIN_USERS 完全一致', async () => {
-    const r = await api('GET', '/api/users');
-    expect(r.code).toBe(0);
-    expect(Array.isArray(r.data)).toBe(true);
-    expect(r.data).toHaveLength(21);
-    expect(r.data).toEqual([...BUILTIN_USERS]);
-    expect(r.data[0]).toBe('User01');
-    expect(r.data[20]).toBe('External');
-    expect(r.data[18]).toBe('Group A');
-    expect(r.data[13]).toBe('User14');
-    expect(r.data[12]).toBe('User13');
-  });
-});
 
 /* ===================== b·owner 落盘 / 快照 / 回滚 ===================== */
 describe('b·owner 落盘 / 历史快照 / 回滚', () => {
