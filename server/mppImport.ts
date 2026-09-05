@@ -335,6 +335,7 @@ export function importMppFile(filePath: string): Plan {
     nextTaskSeq: tasks.length + 1,
     calendar: {
       mode: 'NATURAL',
+      skipHolidays: false,
       anchorDate: config.schedule.anchorDate === 'TODAY' ? '' : config.schedule.anchorDate,
       defaultDuration: config.schedule.defaultDuration,
     },

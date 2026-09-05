@@ -37,6 +37,8 @@ import {
   type LockState,
   type Plan,
   type PlanMeta,
+  type PublicUserInfo,
+  type PublicWorkspaceInfo,
   type ScheduleResult,
   type Task,
   type TaskComputed,
@@ -46,6 +48,7 @@ import {
   type TodosFile,
   type VersionMeta,
   type WorkCalendar,
+  type WorkspaceRole,
   type ZoomLevel,
 } from '../shared/types';
 import { collectPeople, normalizePeople, type PeopleField } from '../shared/people';
@@ -73,7 +76,7 @@ export interface ToastMsg {
   severity: 'success' | 'info' | 'warning' | 'error';
 }
 
-export type DialogName = 'user' | 'planPicker' | 'save' | 'history' | 'calendar' | 'exportTodos';
+export type DialogName = 'user' | 'planPicker' | 'save' | 'history' | 'calendar' | 'exportTodos' | 'roster';
 
 /** 全局工作日历保留资源 id（与 per-plan 锁相互独立，见 server/routes.ts） */
 export const GLOBAL_CALENDAR = 'GLOBAL_CALENDAR';
@@ -141,12 +144,36 @@ export interface StoreState {
    */
   todosRevision: number;
 
+  /* ---------------- 身份协作（v1.2.0） ---------------- */
+  /** 启动时已探测完成（无论登录与否） */
+  authReady: boolean;
+  /** 当前是否已登录（来自 /api/auth/me） */
+  authed: boolean;
+  /** 当前登录用户的 userId（用于 owner 自查、邀请消费识别等） */
+  sessionUserId: string | null;
+  /** 当前用户所在的所有 workspace 列表 */
+  workspaces: PublicWorkspaceInfo[];
+  /** 当前 session 绑定的 workspaceId（可能 null：未登录或无任何 workspace） */
+  currentWorkspaceId: string | null;
+  /** 当前 workspace 中的角色 */
+  currentWorkspaceRole: WorkspaceRole | null;
+
   /* ---------------- 动作 ---------------- */
   init: () => Promise<void>;
+  /** 启动期探测登录态（cookie 优先），完成后 authReady=true */
+  initAuth: () => Promise<void>;
+  login: (username: string, password: string) => Promise<void>;
+  register: (username: string, password: string, displayName: string, inviteToken?: string) => Promise<void>;
+  logout: () => Promise<void>;
+  listWorkspaces: () => Promise<void>;
+  switchWorkspace: (workspaceId: string) => Promise<void>;
+  /** 把当前 workspace 成员名单注入 users 数组（驱动人员下拉） */
+  loadTeamRoster: () => void;
+  /** 旧的 setUser 保留作为内部辅助：仅设置 displayName，不发任何请求（兼容旧路径） */
   setUser: (name: string) => Promise<void>;
   listPlans: () => Promise<void>;
   openPlan: (planId: string) => Promise<void>;
-  createPlan: (name: string, notes: string) => Promise<void>;
+  createPlan: (name: string, notes: string, skipHolidays?: boolean) => Promise<void>;
   importPlan: (file: File) => Promise<void>;
   refreshPlan: () => Promise<void>;
   recompute: () => void;
@@ -396,7 +423,7 @@ export const useStore = create<StoreState>((set, get) => {
     lock: null,
     lockCfg: DEFAULT_LOCK_CFG,
 
-    session: { user: null, mode: 'READONLY', lockToken: null },
+    session: { user: null, userId: null, role: null, mode: 'READONLY', lockToken: null },
     dirty: false,
     preview: null,
     busy: false,
@@ -407,7 +434,7 @@ export const useStore = create<StoreState>((set, get) => {
     zoom: 'day',
     selectedTaskId: null,
     todayTick: 0,
-    dialogs: { user: false, planPicker: false, save: false, history: false, calendar: false, exportTodos: false },
+    dialogs: { user: false, planPicker: false, save: false, history: false, calendar: false, exportTodos: false, roster: false },
     filter: EMPTY_FILTER,
     todoDrawerTaskId: null,
     todosRevision: 0,
@@ -419,6 +446,14 @@ export const useStore = create<StoreState>((set, get) => {
     calendarSaving: false,
     pendingNonWorking: null,
 
+    /* 身份协作（v1.2.0） */
+    authReady: false,
+    authed: false,
+    sessionUserId: null,
+    workspaces: [],
+    currentWorkspaceId: null,
+    currentWorkspaceRole: null,
+
     /* ---------------- 启动 ---------------- */
     init: async () => {
       if (initialized) return;
@@ -429,14 +464,6 @@ export const useStore = create<StoreState>((set, get) => {
         set({ lockCfg: health.lock });
       } catch {
         /* health 失败不阻断，使用默认锁参数 */
-      }
-
-      let users: string[] = [];
-      try {
-        users = await api.getUsers();
-        set({ users });
-      } catch (e) {
-        set({ toast: { message: `读取用户名单失败：${errMessage(e)}`, severity: 'error' } });
       }
 
       // 拉取全局工作日历（T04：生产路径启用真实日历，单一真源）
@@ -453,11 +480,152 @@ export const useStore = create<StoreState>((set, get) => {
         }
       });
 
-      // 启动第一步：强制「登录」——每次启动先选名字确定本次操作人（共享盘多用户部署避免串号）。
+      // 启动期探测登录态（cookie 优先；未登录就弹登录门禁）
+      await get().initAuth();
       get().openDialog('user');
     },
 
+    /**
+     * 启动期探测：用 cookie 调 /api/auth/me；已登录就拉到 workspaces + 团队花名册。
+     * 失败一律按未登录处理（不阻断启动，由 AuthGate 弹登录）。
+     */
+    initAuth: async () => {
+      try {
+        const me = await api.me();
+        if (me) {
+          set({
+            authReady: true,
+            authed: true,
+            sessionUserId: me.user.userId,
+            session: {
+              ...get().session,
+              user: me.user.displayName,
+              userId: me.user.userId,
+              role: me.user.role,
+            },
+            currentWorkspaceId: me.workspace.workspaceId,
+            currentWorkspaceRole: me.workspace.role as WorkspaceRole,
+          });
+          await get().listWorkspaces();
+          await get().loadTeamRoster();
+        } else {
+          set({ authReady: true, authed: false });
+        }
+      } catch (e) {
+        // 网络错误：按未登录处理
+        set({ authReady: true, authed: false });
+        set({ toast: { message: `探测登录态失败：${errMessage(e)}`, severity: 'warning' } });
+      }
+    },
+
+    login: async (username: string, password: string) => {
+      const r = await api.login(username, password);
+      set({
+        authed: true,
+        sessionUserId: r.user.userId,
+        session: {
+          ...get().session,
+          user: r.user.displayName,
+          userId: r.user.userId,
+          role: r.user.role,
+        },
+        currentWorkspaceId: r.workspaceId,
+        currentWorkspaceRole: (r.role ?? 'editor') as WorkspaceRole,
+      });
+      window.localStorage.setItem(LS_USER_KEY, r.user.displayName);
+      await get().listWorkspaces();
+      await get().loadTeamRoster();
+      await get().listPlans();
+      // 单 workspace 时直接关掉登录门禁，跳到计划列表
+      if (get().workspaces.length <= 1) {
+        set((s) => ({ dialogs: { ...s.dialogs, user: false } }));
+        if (!get().plan) get().openDialog('planPicker');
+      }
+    },
+
+    register: async (username: string, password: string, displayName: string, inviteToken?: string) => {
+      const r = await api.register(username, password, displayName, inviteToken);
+      set({
+        authed: true,
+        sessionUserId: r.user.userId,
+        session: {
+          ...get().session,
+          user: r.user.displayName,
+          userId: r.user.userId,
+          role: r.user.role,
+        },
+        currentWorkspaceId: r.workspaceId,
+        currentWorkspaceRole: (r.role ?? 'owner') as WorkspaceRole,
+      });
+      window.localStorage.setItem(LS_USER_KEY, r.user.displayName);
+      await get().listWorkspaces();
+      await get().loadTeamRoster();
+      set((s) => ({ dialogs: { ...s.dialogs, user: false } }));
+      if (!get().plan) get().openDialog('planPicker');
+    },
+
+    logout: async () => {
+      try {
+        await api.logout();
+      } catch {
+        /* 忽略：服务端 session 可能已过期 */
+      }
+      // 清状态：保留 lockCfg / calendar；其余清零
+      set({
+        authed: false,
+        sessionUserId: null,
+        session: { user: null, userId: null, role: null, mode: 'READONLY', lockToken: null },
+        workspaces: [],
+        currentWorkspaceId: null,
+        currentWorkspaceRole: null,
+        users: [],
+        plans: [],
+        plan: null,
+        sched: null,
+        history: [],
+        lock: null,
+        selectedTaskId: null,
+        dialogs: { ...get().dialogs, user: true, planPicker: false, save: false, history: false, roster: false },
+      });
+      window.localStorage.removeItem(LS_USER_KEY);
+    },
+
+    listWorkspaces: async () => {
+      try {
+        const ws = await api.listWorkspaces();
+        set({ workspaces: ws });
+      } catch (e) {
+        get().showToast(`读取工作区列表失败：${errMessage(e)}`, 'error');
+      }
+    },
+
+    switchWorkspace: async (workspaceId: string) => {
+      const r = await api.switchWorkspace(workspaceId);
+      set({
+        currentWorkspaceId: r.workspaceId,
+        currentWorkspaceRole: r.role as WorkspaceRole,
+      });
+      await get().loadTeamRoster();
+      await get().listPlans();
+      set((s) => ({ dialogs: { ...s.dialogs, user: false } }));
+      if (!get().plan) get().openDialog('planPicker');
+    },
+
+    /**
+     * 把当前 workspace 的成员 displayName 注入 users 数组，让「负责人 / 顾问人」下拉用团队花名册做候选。
+     * 同时保留 BUILTIN_USERS 作为兜底（避免空花名册时下拉空空）。
+     */
+    loadTeamRoster: () => {
+      const { workspaces, currentWorkspaceId } = get();
+      const ws = workspaces.find((w) => w.workspaceId === currentWorkspaceId);
+      const memberNames = ws ? ws.members.map((m) => m.displayName) : [];
+      // 成员名在前，BUILTIN_USERS 去重后兜底在后
+      const merged = [...new Set([...memberNames, ...BUILTIN_USERS])];
+      set({ users: merged });
+    },
+
     setUser: async (name: string) => {
+      // 保留兼容：仅在没有登录时用 setUser（displayName 直填）
       window.localStorage.setItem(LS_USER_KEY, name);
       set((s) => ({ session: { ...s.session, user: name }, dialogs: { ...s.dialogs, user: false } }));
       await get().listPlans();
@@ -507,7 +675,7 @@ export const useStore = create<StoreState>((set, get) => {
       }
     },
 
-    createPlan: async (name: string, notes: string) => {
+    createPlan: async (name: string, notes: string, skipHolidays = false) => {
       const user = get().session.user;
       if (!user) {
         get().showToast('请先选择身份', 'warning');
@@ -515,7 +683,7 @@ export const useStore = create<StoreState>((set, get) => {
       }
       set({ busy: true });
       try {
-        const plan = await api.createPlan(name, user, notes);
+        const plan = await api.createPlan(name, user, notes, skipHolidays);
         set({ dialogs: { ...get().dialogs, planPicker: false } });
         await get().listPlans();
         await get().openPlan(plan.planId);

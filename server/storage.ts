@@ -127,7 +127,7 @@ export class PlanRepository {
   }
 
   /** 创建骨架计划（version=0，由 routes 追加首个版本后写盘） */
-  public createPlan(name: string, editor: string): Plan {
+  public createPlan(name: string, editor: string, skipHolidays = false): Plan {
     const planId = generatePlanId();
     fs.mkdirSync(planDir(planId), { recursive: true });
     const ts = nowTimestamp();
@@ -143,6 +143,7 @@ export class PlanRepository {
       calendar: {
         mode: 'NATURAL',
         holidays: [],
+        skipHolidays,
         anchorDate: resolveAnchorDate() || todayISO(),
         defaultDuration: config.schedule.defaultDuration,
       },

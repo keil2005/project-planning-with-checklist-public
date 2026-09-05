@@ -3,6 +3,9 @@
  *
  * 统一解包 { code, data, message }（K9）：code !== 0 一律抛 ApiError，
  * 组件/store 只处理 data 与 ApiError。
+ *
+ * 认证：所有请求都带 cookie（httpOnly, SameSite=Lax）。fetch 默认 same-origin 行为会带上，
+ * 因此无需在 headers 里手动塞 cookie。
  */
 
 import { ErrCode, type ApiResp } from '../shared/types';
@@ -13,6 +16,8 @@ import type {
   LockState,
   Plan,
   PlanMeta,
+  PublicUserInfo,
+  PublicWorkspaceInfo,
   SavePlanResp,
   TodoOp,
   TodoOpResp,
@@ -22,6 +27,22 @@ import type {
 } from '../shared/types';
 
 const BASE = '/api';
+
+/** 登录响应 */
+export interface AuthResp {
+  user: PublicUserInfo;
+  session: { token: string; expiresAt: string };
+  workspaceId: string;
+  role?: string;
+}
+
+/** 邀请信息（公开） */
+export interface InviteInfo {
+  workspaceId: string;
+  role: string;
+  status: 'pending' | 'consumed' | 'revoked' | 'expired';
+  expiresAt: string;
+}
 
 export class ApiError extends Error {
   public readonly code: number;
@@ -36,7 +57,11 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
-  const init: RequestInit = { method, headers: { 'Content-Type': 'application/json' } };
+  const init: RequestInit = {
+    method,
+    credentials: 'same-origin', // 带 cookie 走 httpOnly session
+    headers: { 'Content-Type': 'application/json' },
+  };
   if (body !== undefined) init.body = JSON.stringify(body);
 
   let res: Response;
@@ -72,8 +97,8 @@ export const api = {
     return request<PlanMeta[]>('/plans');
   },
 
-  createPlan(name: string, editor: string, notes: string): Promise<Plan> {
-    return request<Plan>('/plans', 'POST', { name, editor, notes });
+  createPlan(name: string, editor: string, notes: string, skipHolidays = false): Promise<Plan> {
+    return request<Plan>('/plans', 'POST', { name, editor, notes, skipHolidays });
   },
 
   /** 导入 Microsoft Project 文件（.mpp/.mpx/.xml），content 为 base64（可带 data URL 前缀） */
@@ -179,6 +204,89 @@ export const api = {
    */
   putCalendar(cfg: CalendarConfigData, editor: string, lockToken: string): Promise<CalendarConfigData> {
     return request<CalendarConfigData>('/calendar', 'PUT', { editor, lockToken, config: cfg });
+  },
+
+  /* ============================ 身份协作（v1.2.0） ============================ */
+
+  /** 探测当前登录态；未登录返回 null（不抛错） */
+  me(): Promise<{ user: PublicUserInfo; workspace: { workspaceId: string; role: string } } | null> {
+    return requestAllow401<{ user: PublicUserInfo; workspace: { workspaceId: string; role: string } }>('/auth/me');
+  },
+
+  /** 用户名 + 密码登录（任意已注册账号；workspaceId 可选，缺省取首个 membership） */
+  login(username: string, password: string, workspaceId?: string): Promise<AuthResp> {
+    return request<AuthResp>('/auth/login', 'POST', {
+      username,
+      password,
+      ...(workspaceId ? { workspaceId } : {}),
+    });
+  },
+
+  /** 注册（可带 inviteToken 加入指定 workspace；不带则建个人 workspace） */
+  register(username: string, password: string, displayName: string, inviteToken?: string): Promise<AuthResp> {
+    return request<AuthResp>('/auth/register', 'POST', {
+      username,
+      password,
+      displayName,
+      ...(inviteToken ? { inviteToken } : {}),
+    });
+  },
+
+  /** 注销（清 cookie + 销毁服务端 session） */
+  logout(): Promise<{ ok: true }> {
+    return request<{ ok: true }>('/auth/logout', 'POST');
+  },
+
+  /** 切换当前 workspace（多 workspace 用户） */
+  switchWorkspace(workspaceId: string): Promise<{ workspaceId: string; role: string }> {
+    return request<{ workspaceId: string; role: string }>('/auth/switch-workspace', 'POST', { workspaceId });
+  },
+
+  /** 列出我所在的所有 workspace（用于 workspace 切换器） */
+  listWorkspaces(): Promise<PublicWorkspaceInfo[]> {
+    return request<PublicWorkspaceInfo[]>('/workspaces');
+  },
+
+  /** 查邀请信息（无需登录；前端可在注册页展示「邀请有效 / 已过期 / 已使用」） */
+  getInviteInfo(token: string): Promise<InviteInfo | null> {
+    return requestAllow401<InviteInfo>(`/workspaces/invites/${encodeURIComponent(token)}`);
+  },
+
+  /** 创建邀请链接（owner-only） */
+  createInvite(workspaceId: string, role: 'owner' | 'editor' | 'viewer'): Promise<{ token: string; expiresAt: string }> {
+    return request<{ token: string; expiresAt: string }>(`/workspaces/${encodeURIComponent(workspaceId)}/invites`, 'POST', { role });
+  },
+
+  /** 撤销邀请（owner-only） */
+  revokeInvite(workspaceId: string, token: string): Promise<{ ok: true }> {
+    return request<{ ok: true }>(
+      `/workspaces/${encodeURIComponent(workspaceId)}/invites/${encodeURIComponent(token)}`,
+      'DELETE',
+    );
+  },
+
+  /** 列出 workspace 邀请（owner-only） */
+  listInvites(workspaceId: string): Promise<
+    Array<{
+      token: string;
+      role: string;
+      status: string;
+      createdBy: string;
+      createdAt: string;
+      expiresAt: string;
+      consumedBy?: string;
+      consumedAt?: string;
+    }>
+  > {
+    return request(`/workspaces/${encodeURIComponent(workspaceId)}/invites`);
+  },
+
+  /** 移除成员（owner-only） */
+  removeMember(workspaceId: string, userId: string): Promise<{ ok: true }> {
+    return request<{ ok: true }>(
+      `/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(userId)}`,
+      'DELETE',
+    );
   },
 };
 

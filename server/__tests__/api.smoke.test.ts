@@ -78,6 +78,23 @@ describe('c+e·HTTP 冒烟与版本历史', () => {
     planId = r.data.planId;
   });
 
+  it('POST /api/plans（skipHolidays=true）→ calendar.skipHolidays 写入', async () => {
+    const r = await api('POST', '/api/plans', {
+      name: '跳过节假日计划',
+      editor: 'Alice',
+      notes: '开启真实日历',
+      skipHolidays: true,
+    });
+    expect(r.code).toBe(0);
+    expect(r.data.calendar?.skipHolidays).toBe(true);
+  });
+
+  it('POST /api/plans 缺省 skipHolidays → 默认 false', async () => {
+    const r = await api('POST', '/api/plans', { name: '全工作日计划', editor: 'Alice', notes: '默认' });
+    expect(r.code).toBe(0);
+    expect(r.data.calendar?.skipHolidays).toBe(false);
+  });
+
   it('POST /api/plans 缺 notes → 1002', async () => {
     const r = await api('POST', '/api/plans', { name: 'x', editor: 'Alice', notes: '   ' });
     expect(r.code).toBe(1002);

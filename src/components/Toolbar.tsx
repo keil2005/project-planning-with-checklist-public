@@ -24,7 +24,9 @@ import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import HistoryIcon from '@mui/icons-material/History';
 import LockIcon from '@mui/icons-material/Lock';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
+import LogoutIcon from '@mui/icons-material/Logout';
 import PersonIcon from '@mui/icons-material/Person';
+import GroupsIcon from '@mui/icons-material/Groups';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import SaveIcon from '@mui/icons-material/Save';
 import TodayIcon from '@mui/icons-material/Today';
@@ -48,6 +50,8 @@ export default function Toolbar(): JSX.Element {
   const jumpToday = useStore((s) => s.jumpToday);
   const refreshPlan = useStore((s) => s.refreshPlan);
   const importPlan = useStore((s) => s.importPlan);
+  const authed = useStore((s) => s.authed);
+  const logout = useStore((s) => s.logout);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -79,11 +83,29 @@ export default function Toolbar(): JSX.Element {
       <Divider orientation="vertical" flexItem />
 
       {/* 身份 */}
-      <Tooltip title="点击切换身份（无登录，仅用于记录变更人）">
+      <Tooltip title={authed ? '当前已登录，点击切换账号 / 工作区' : '点击登录'}>
         <Button startIcon={<PersonIcon />} variant="text" onClick={() => openDialog('user')}>
-          {session.user ?? '选择身份'}
+          {session.user ?? '未登录'}
         </Button>
       </Tooltip>
+
+      {/* 团队花名册（已登录才显示） */}
+      {authed && (
+        <Tooltip title="管理团队成员与邀请链接">
+          <Button startIcon={<GroupsIcon />} variant="text" onClick={() => openDialog('roster')}>
+            团队
+          </Button>
+        </Tooltip>
+      )}
+
+      {/* 注销 */}
+      {authed && (
+        <Tooltip title="注销并清 cookie">
+          <Button startIcon={<LogoutIcon />} variant="text" onClick={() => void logout()}>
+            注销
+          </Button>
+        </Tooltip>
+      )}
 
       <Divider orientation="vertical" flexItem />
 

@@ -18,11 +18,26 @@ import * as calendarService from './calendarService';
 import { createApiRouter, errorMiddleware } from './routes';
 import { mppImportStatus } from './mppImport';
 import { BUILTIN_USERS } from '../shared/roster';
+import {
+  bootstrapAuth,
+  bootstrapDemoWorkspace,
+  maybeSeedDemoPlan,
+  warmAuthCache,
+  purgeExpiredSessions,
+  purgeExpiredInvites,
+} from './auth';
+import { optionalAuth } from './auth';
+import {
+  createAuthRouter,
+  createWorkspaceRouter,
+  createUsersRouter,
+} from './authRoutes';
+import { DomainError, ErrCode, httpStatusOf, isDomainError, type ApiResp } from '../shared/types';
 
 function createApp(): express.Express {
   const app = express();
 
-  app.use(cors());
+  app.use(cors({ credentials: true, origin: true }));
   app.use(express.json({ limit: '20mb' }));
 
   // 简易访问日志（内部工具，便于排错）
@@ -32,6 +47,14 @@ function createApp(): express.Express {
     }
     next();
   });
+
+  // 鉴权中间件（optional）：从 cookie 解析 session，所有路由可读 req.auth
+  app.use(optionalAuth);
+
+  // 鉴权 / Workspace / Users 路由
+  app.use('/api/auth', createAuthRouter());
+  app.use('/api/workspaces', createWorkspaceRouter());
+  app.use('/api/users', createUsersRouter());
 
   app.use('/api', createApiRouter());
 
@@ -60,6 +83,32 @@ function createApp(): express.Express {
 }
 
 function main(): void {
+  // 身份层自举（首位 admin + 首次 demo workspace）
+  warmAuthCache();
+  purgeExpiredSessions();
+  purgeExpiredInvites();
+  const authBoot = bootstrapAuth();
+  // 若新建 demo workspace → seed 两个演示计划
+  if (authBoot.demoWsCreated && authBoot.demoWsId) {
+    const firstAdmin = findFirstAdminUserId();
+    if (firstAdmin) {
+      const seeded = maybeSeedDemoPlan(authBoot.demoWsId, firstAdmin);
+      if (seeded) {
+        console.info(`[demo-seed] 已注入演示计划（workspace=${authBoot.demoWsId}）`);
+      }
+    }
+  }
+  if (authBoot.demoWsId && !authBoot.demoWsCreated) {
+    // 即使 demo ws 已存在，也尝试 seed 计划（针对新建 ws 但没 seed 计划的情况）
+    const firstAdmin = findFirstAdminUserId();
+    if (firstAdmin) {
+      const seeded = maybeSeedDemoPlan(authBoot.demoWsId, firstAdmin);
+      if (seeded) {
+        console.info(`[demo-seed] 已注入演示计划（workspace=${authBoot.demoWsId}）`);
+      }
+    }
+  }
+
   const app = createApp();
   lockService.startSweeper(config.lock.sweepMs);
 
@@ -76,6 +125,22 @@ function main(): void {
     console.info(` 端口     : ${config.port}`);
     console.info(` DATA_DIR : ${config.dataDir}`);
     console.info(` 用户名单 : ${BUILTIN_USERS.length} 人 (系统内置)`);
+    console.info(
+      authBoot.adminCreated
+        ? ` 身份层   : 已创建首位 admin（${authBoot.adminUsername}，来自 ADMIN_USER/ADMIN_PASSWORD env）`
+        : ' 身份层   : 复用现有用户（无 ADMIN_USER/ADMIN_PASSWORD 时跳过自举）',
+    );
+    console.info(
+      authBoot.demoWsId
+        ? ` 工作区   : ${authBoot.demoWsCreated ? '已创建 demo workspace' : '已存在'}（id=${authBoot.demoWsId}）`
+        : ' 工作区   : 未创建（无 admin 用户）',
+    );
+    console.info(
+      ` Auth     : /api/auth/{register,login,logout,me,switch-workspace}`,
+    );
+    console.info(
+      ` Workspace: /api/workspaces/*（owner-only 操作）`,
+    );
     console.info(` 锁参数   : timeout=${config.lock.timeoutMs}ms heartbeat=${config.lock.heartbeatMs}ms sweep=${config.lock.sweepMs}ms`);
     console.info(
       config.autoSync.enabled
@@ -106,3 +171,13 @@ function main(): void {
 main();
 
 export { createApp };
+
+/* ------------------------------ helpers ------------------------------ */
+
+import { readUsers } from './auth';
+
+function findFirstAdminUserId(): string | null {
+  const users = Object.values(readUsers().users);
+  const admin = users.find((u) => u.role === 'admin');
+  return admin?.userId ?? null;
+}

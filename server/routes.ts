@@ -17,6 +17,7 @@ import { BUILTIN_USERS } from '../shared/roster';
 import {
   DomainError,
   ErrCode,
+  NATURAL_CALENDAR,
   NOTES_MAX_LEN,
   httpStatusOf,
   isDomainError,
@@ -99,6 +100,16 @@ function buildServerCalendar(): WorkCalendar {
   return buildWorkCalendar(calendarService.readCalendar());
 }
 
+/**
+ * 解析 plan 应使用哪个工作日历（per-plan calendar.skipHolidays 开关）：
+ *   true  → 真实工作日历（跳过周末 + 国定节假日 + 调休补班）
+ *   false → NATURAL_CALENDAR（全工作日兜底；适合倒推交付期的硬期限项目）
+ * 单一真源：本函数是服务端权威排程选择日历的唯一入口。
+ */
+function resolvePlanCalendar(plan: Plan): WorkCalendar {
+  return plan.calendar?.skipHolidays === true ? buildServerCalendar() : NATURAL_CALENDAR;
+}
+
 /** 用给定工作日历对 plan 做服务端权威重算（K8/K18） */
 function schedulePlan(plan: Plan, cal: WorkCalendar): ScheduleResult {
   const opts = scheduleOptionsFromConfig();
@@ -109,9 +120,9 @@ function schedulePlan(plan: Plan, cal: WorkCalendar): ScheduleResult {
   });
 }
 
-/** 服务端权威重算（K8/K18）：注入全局真实工作日历 */
+/** 服务端权威重算（K8/K18）：按 plan.calendar.skipHolidays 选择日历 */
 function authoritativeSchedule(plan: Plan): ScheduleResult {
-  return schedulePlan(plan, buildServerCalendar());
+  return schedulePlan(plan, resolvePlanCalendar(plan));
 }
 
 /** 把 computed 作为缓存写回 tasks（K4：仅缓存，读取后仍会重算） */
@@ -190,7 +201,9 @@ export function createApiRouter(): Router {
       const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
       const editor = requireEditor(req.body?.editor);
       const notes = requireNotes(req.body?.notes);
-      const skeleton = planRepo.createPlan(name, editor);
+      // 可选：是否在排程时跳过国定节假日（默认 false，向后兼容）
+      const skipHolidays = req.body?.skipHolidays === true;
+      const skeleton = planRepo.createPlan(name, editor, skipHolidays);
       const entry = historyRepo.appendVersion(skeleton.planId, skeleton, editor, notes);
       planRepo.writePlan(entry.planSnapshot);
       ok(res, entry.planSnapshot);

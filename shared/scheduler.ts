@@ -452,6 +452,8 @@ export function normalizePlan(input: Plan): Plan {
     typeof calendarRaw.defaultDuration === 'string' && calendarRaw.defaultDuration.trim() !== ''
       ? calendarRaw.defaultDuration.trim()
       : '1d';
+  // skipHolidays 默认为 false（向后兼容 v1.0 之前的 plan 数据；旧的 plan 落盘无此字段时按 false 走）
+  const skipHolidays = calendarRaw.skipHolidays === true;
 
   return {
     schemaVersion: SCHEMA_VERSION,
@@ -466,6 +468,7 @@ export function normalizePlan(input: Plan): Plan {
       mode: 'WORKWEEK5',
       // 本期忽略 per-plan holidays 字段（D7）：全局日历由 T02 calendar.json 提供，避免与全局冲突
       holidays: [],
+      skipHolidays,
       anchorDate,
       defaultDuration,
     },

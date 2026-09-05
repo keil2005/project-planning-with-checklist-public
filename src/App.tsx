@@ -18,8 +18,10 @@ import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
+import { AuthGate } from './components/AuthGate';
 import Dialogs from './components/Dialogs';
 import GanttChart from './components/GanttChart';
+import { RosterDialog } from './components/RosterDialog';
 import TaskTable from './components/TaskTable';
 import TodoDrawer from './components/TodoDrawer';
 import Toolbar from './components/Toolbar';
@@ -211,6 +213,8 @@ export default function App(): JSX.Element {
 
       <Dialogs />
       <TodoDrawer />
+      <RosterDialog />
+      <AuthGateShell />
 
       <Snackbar
         open={toast !== null}
@@ -227,4 +231,13 @@ export default function App(): JSX.Element {
     </div>
     </ErrorBoundary>
   );
+}
+
+/**
+ * AuthGateShell —— 把 store.dialogs.user 转成受控 props 给 AuthGate，
+ * 让登录门禁可被 useStore 订阅（避免在 store 里直接渲染 React 组件造成耦合）。
+ */
+function AuthGateShell(): JSX.Element {
+  const open = useStore((s) => s.dialogs.user);
+  return <AuthGate open={open} />;
 }

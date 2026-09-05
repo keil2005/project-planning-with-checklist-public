@@ -12,6 +12,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Alert from '@mui/material/Alert';
 import Button from '@mui/material/Button';
+import Checkbox from '@mui/material/Checkbox';
 import Chip from '@mui/material/Chip';
 import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
@@ -153,6 +154,7 @@ function PlanPickerDialog(): JSX.Element {
   const [creating, setCreating] = useState<boolean>(false);
   const [name, setName] = useState<string>('');
   const [notes, setNotes] = useState<string>('创建计划');
+  const [skipHolidays, setSkipHolidays] = useState<boolean>(false);
 
   useEffect(() => {
     if (open) void listPlans();
@@ -163,6 +165,7 @@ function PlanPickerDialog(): JSX.Element {
       setCreating(false);
       setName('');
       setNotes('创建计划');
+      setSkipHolidays(false);
     }
   }, [open]);
 
@@ -215,6 +218,23 @@ function PlanPickerDialog(): JSX.Element {
               placeholder="例：2026 Q4 产品交付计划"
             />
             <NotesField value={notes} onChange={setNotes} label="首版变更纪要（必填）" />
+            <FormControlLabel
+              control={
+                <Checkbox
+                  size="small"
+                  checked={skipHolidays}
+                  onChange={(e) => setSkipHolidays(e.target.checked)}
+                />
+              }
+              label={
+                <span className="flex flex-col text-[13px]">
+                  <span>排程跳过国定节假日（与调休补班）</span>
+                  <span className="text-[11px] text-slate-500">
+                    开启后本计划按真实工作日历排程；关闭则每天都算工作日（仅周末视为非工作日）。
+                  </span>
+                </span>
+              }
+            />
           </div>
         ) : (
           <Button variant="outlined" onClick={() => setCreating(true)}>
@@ -228,7 +248,7 @@ function PlanPickerDialog(): JSX.Element {
           <Button
             variant="contained"
             disabled={!canCreate}
-            onClick={() => void createPlan(name.trim(), notes.trim())}
+            onClick={() => void createPlan(name.trim(), notes.trim(), skipHolidays)}
           >
             创建
           </Button>
@@ -725,7 +745,6 @@ function ExportTodosDialog(): JSX.Element | null {
 export default function Dialogs(): JSX.Element {
   return (
     <>
-      <UserGateDialog />
       <PlanPickerDialog />
       <SaveNotesDialog />
       <HistoryDrawer />

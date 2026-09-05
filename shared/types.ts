@@ -171,6 +171,13 @@ export interface CalendarConfig {
   mode: 'NATURAL' | 'WORKWEEK5';
   /** 扩展位（本期忽略，全局日历由 T02 calendar.json 提供） */
   holidays?: ISODate[];
+  /**
+   * 是否按全局日历跳过国定节假日（与调休补班）：
+   *   true  → 排程使用 buildWorkCalendar() 真实日历（跳过周末+法定假日+调休补班）
+   *   false → 排程使用 NATURAL_CALENDAR（全工作日兜底，适合倒推交付期的硬期限项目）
+   * 默认 false，保持向后兼容（v1.0 之前的 plan 数据迁移也按 false 处理）。
+   */
+  skipHolidays: boolean;
   /** 无任何约束时的落脚点，默认创建日 */
   anchorDate: ISODate;
   /** '1d' */
@@ -515,3 +522,41 @@ export const DERIVE_SOURCE_LABEL: Record<DeriveSource, string> = {
   ANCHOR: '由默认锚点日期推算',
   MIXED: '由其它已填字段推算',
 };
+export type UserRole = 'admin' | 'user';
+export type WorkspaceRole = 'owner' | 'editor' | 'viewer';
+
+export interface PublicUserInfo {
+  userId: string;
+  username: string;
+  displayName: string;
+  role: UserRole;
+}
+
+export interface PublicWorkspaceInfo {
+  workspaceId: string;
+  name: string;
+  description?: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  members: Array<{ userId: string; displayName: string; role: WorkspaceRole; joinedAt: string }>;
+}
+
+/** 身份协作层错误码（前后端共用，src/api.ts 用作 humanAuthError 分支；server/auth/types.ts 再 re-export 一份保证服务端代码零改动） */
+export const AUTH_ERR = {
+  INVALID_CREDENTIALS: 4101,
+  WEAK_PASSWORD: 4102,
+  USERNAME_TAKEN: 4103,
+  SESSION_INVALID: 4104,
+  SESSION_EXPIRED: 4105,
+  WORKSPACE_NOT_FOUND: 4201,
+  WORKSPACE_FORBIDDEN: 4202,
+  INVITE_INVALID: 4301,
+  INVITE_EXPIRED: 4302,
+  INVITE_CONSUMED: 4303,
+  AUTH_REQUIRED: 4401,
+  ROLE_INSUFFICIENT: 4403,
+} as const;
+
+export type AuthErrCode = (typeof AUTH_ERR)[keyof typeof AUTH_ERR];
+
