@@ -68,11 +68,7 @@
 - **全量单测**：252 → **282** 全绿（14 个套件）；`tsc --noEmit` 0 错误；改后已重新 `vite build` 并重启本机服务复验。
 
 ## 本次已落地（2026-09-02）
-- [x] **roster 名单裁定：User14 保留**（用户裁定原文「user14要留的，且清单内放在user13后面」）。现状本就满足（索引 13，紧随 `User13` 索引 12），本次补齐的是**四处遗漏的同步**：
-  - 代码：`shared/roster.ts` 头注释（索引 0..19 → 0..20，共 21 人）；`shared/__tests__/roster.test.ts`（长度 20→21、逐项数组插入 `User14`、尾部索引 17/18→18/19）；`server/__tests__/api.smoke.test.ts` 与 `server/__tests__/assignee.test.ts` 的 `GET /api/users` 期望（20→21，并新增断言 `User13`=12 / `User14`=13 锁定相对顺序）。
-  - 文档：`prd_increment_roster_assignee.md`（新增「变更记录」表 + P0-1/Q1/验收清单/C4/US-1/P1-4 等 6 处口径）、`design_increment_roster_assignee.md`（新增「变更记录」表 + 源码示例/单测示例等 10 处口径）、`increment-sequence-diagram.mermaid`（2 处）。
-  - **处理原则**：PRD §1「原始需求复述」是历史事实（20 人），**不做回改**，改为在头部加「变更记录」并注明「当前生效口径以变更记录与 P0-1 为准」。
-  - 全量测试（放宽 `hookTimeout=120s`）：**252 passed / 0 failed，13 个套件全绿**（此前 5 个失败断言全部消除）。
+- [x] **roster 名单历史归档（v1.2.0 移除）**：v1.1.x 时代固定名单制（21 人）已废弃，运行时改为 workspace 邀请制（`server/auth/workspaces.ts`）。具体名单历史快照见 commit `b2ab140`（v1.1.1 末态）之前的 `shared/roster.ts`；本节为历史归档，不再使用。**⚠ 文档严禁再列具体人名**，新条目统一以"工作区邀请成员"指代。
 - [x] **共享盘同步：用户明确暂缓**（「共享盘先不同步，我们本地还有需要迭代的内容」）。Windows 方案 C 的产物全部留在开发机，`/Volumes/dev/00 public/PM tool/plan-gantt/` **未做任何写入**。
 
 ## 待办（P0）

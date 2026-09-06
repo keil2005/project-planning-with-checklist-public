@@ -54,12 +54,12 @@
 | `src/components/Dialogs.tsx` | 改 | 新增 `NonWorkingDayDialog`（确认二选一）+ `CalendarSettingsDialog`（年切换 + 月历网格 + 重置默认 + 保存 + 历史回滚 P1-3）；`DialogName` 扩 `'calendar'\|'nonworking'` |
 | `src/index.css` | 改 | 新增 CSS 变量 `--gantt-weekend` / `--gantt-holiday` / `--gantt-makeup`（浅色默认值；dark 主题接入点，见 §10 U-calendar-1） |
 | `shared/__tests__/calendar.test.ts` | **新增** | 工作日历纯函数单测（addWorkingDays/isWorkingDay/diffDuration 工作日归约/round-trip） |
-| 测试迁移 | 改 | `shared/__tests__/scheduler.test.ts`、`extra.test.ts`、`server/__tests__/exporters.test.ts`、`api.smoke.test.ts` 改写断言（见 §7 N3）；`roster.test.ts`/`assignee.test.ts`/`lockService.test.ts` **保持** |
+| 测试迁移 | 改 | `shared/__tests__/scheduler.test.ts`、`extra.test.ts`、`server/__tests__/exporters.test.ts`、`api.smoke.test.ts` 改写断言（见 §7 N3）；`assignee.test.ts`/`lockService.test.ts` **保持** |
 
 ### 1.2 不动的文件 / 红线（务必守住）
 
 - **`shared/scheduler.ts` 的 15 分支决策矩阵结构不变**，仅日期算术换参（C2 已声明）。排程算法主体（拓扑排序、依赖边∪层级边、环检测、父子 rollup）**不变**。
-- **owner / 负责人逻辑（K19–K22）完全不受影响**；`schedule()` 仍不读 owner；`roster.test.ts`、`assignee.test.ts` 保持全绿（QA 验证见 §7 N3 末段）。
+- **owner / 负责人逻辑（K19–K22）完全不受影响**；`schedule()` 仍不读 owner；`assignee.test.ts` 保持全绿（QA 验证见 §7 N3 末段）。
 - **编辑锁状态机、版本历史 append-only、notes 必填、`{code,data,message}` 契约不变**。
 - **错误码段（1000/2000/3000/5000）不新增**（D9）：非工作日提示是 UI 态/横幅，不是 Diagnostic。
 - **`shared/` 仍零 fs / 零 DOM 纯函数**（WorkCalendar 由 server/前端加载后注入，见 D8）。
@@ -571,7 +571,7 @@ export function prevWorkingDay(date: ISODate, cal?: WorkCalendar): ISODate;
 - `GET /export?format=xml → 含日历`：旧 `toContain('Natural(7x8h)')` → 改写为断言含工作日历标记（如 `<Exception>` 或周日 `<DayWorking>0</DayWorking>`）。
 - 其余（health/users/plans/锁/历史/restore）：**不变**。
 
-#### E. `roster.test.ts` / `assignee.test.ts` / `lockService.test.ts` —— **不受影响，保持全绿**
+#### E. `assignee.test.ts` / `lockService.test.ts` —— **不受影响，保持全绿**
 - 负责人逻辑独立于排程（`schedule()` 不读 owner）。`assignee.test.ts` 的「c·owner 不参与排程」两 plan 仅差 owner，注入同一日历后 computed 仍 `toEqual`、且无 `field==='owner'` 的诊断——**结论不变**。
 - `lockService.test.ts` 无日期运算，零影响。
 - 若 QA 发现 `assignee.test.ts` 中某断言因绝对日期变化而飘红，原因是该测试 plan 的 start/end 经工作日历重算——但 `s2.computed` 与 `s1.computed` 用**同一日历**重算，二者仍全等，不应飘红；若飘红则为测试自身引用了硬编码旧日期，按 §7.A 同类规则更新即可（非 owner 逻辑问题）。

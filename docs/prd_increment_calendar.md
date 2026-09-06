@@ -248,4 +248,4 @@
 - [ ] 导出 XML 在 ProjectLibre/MS Project 导入后起止与工具一致（P0-6）
 - [ ] 旧计划打开出现工作日历横幅（P0-8）；保存后 `mode=WORKWEEK5`
 - [ ] 超范围年份横幅（P1-1）
-- [ ] 既有 `scheduler.test.ts` / `roster.test.ts` 全部回归绿（核心算术改动后不容回退）
+- [ ] 既有 `scheduler.test.ts` 全部回归绿（核心算术改动后不容回退）
