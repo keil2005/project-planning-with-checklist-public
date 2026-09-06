@@ -71,6 +71,7 @@
 
 ### Fixed
 - `sync-to-share.sh` 两处 bug：`$LATEST_VER）` / `$PLAN_NAME」` 全角标点 unbound variable；rsync 改用 `mktemp -d` 目录源 + `--delete --inplace`（SMB 不支持原子 rename）
+- 未保存计划前管理 TODO 的友提示：`addTodo` / `updateTodo` / `deleteTodo` / `moveTodo` 入口检查 `dirty`，脏数据时 toast `请先保存计划，再管理 TODO`（warning）并阻断请求；服务端 `ERR_PLAN_NOT_FOUND` 兜底翻译到同一文案
 - 日历列宽默认 200px，列宽模块 24 例单测；`autoFitWidth` 测量失效兜底口径修正
 
 ### Tests

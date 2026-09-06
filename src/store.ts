@@ -310,6 +310,25 @@ export const useStore = create<StoreState>((set, get) => {
     set({ plan: normalizePlan(draft), todosRevision: file.revision });
   };
 
+  /**
+   * todo 操作前置守门：todo 是 task 级子资源，依赖 server 上 task 真实存在。
+   * - 新建计划首次保存前：plan.planId 仅在客户端存在，server `requirePlanExists` 必失败
+   * - 已保存但当前 `dirty=true`（含改了行/单元格但未保存）：server 端 plan.tasks 与本地不同步，
+   *   即使 planId 存在，taskId 校验（routes.ts:506-510）也极易失败
+   * 两种场景都直接 toast「请先保存计划」并阻断，不发请求。
+   */
+  const ensurePlanSavedForTodo = (): boolean => {
+    const { plan, dirty } = get();
+    // 场景 1: 还没有 plan（极端边界，按脏数据处理）
+    // 场景 2: dirty=true（新建未保存 / 改后未保存）—— server 端 plan.tasks 与本地不同步，
+    //         即便 planId 存在，taskId 校验（routes.ts:506-510）也极易失败
+    if (!plan || dirty) {
+      get().showToast(t('toast.todoNeedSave'), 'warning');
+      return false;
+    }
+    return true;
+  };
+
   const stopHeartbeat = (): void => {
     if (heartbeatTimer) {
       clearInterval(heartbeatTimer);
@@ -1234,6 +1253,7 @@ export const useStore = create<StoreState>((set, get) => {
     addTodo: async (taskId, text) => {
       const trimmed = text.trim();
       if (trimmed === '') return;
+      if (!ensurePlanSavedForTodo()) return;
       const { plan, session } = get();
       if (!plan || !session.user) return;
       const planId = plan.planId;
@@ -1241,11 +1261,16 @@ export const useStore = create<StoreState>((set, get) => {
         const resp = await api.todoOp(planId, taskId, session.user, { op: 'add', text: trimmed });
         applyTodoList(planId, taskId, resp.todos, resp.revision);
       } catch (e) {
-        get().showToast(t('toast.addTodoFail', { msg: errMessage(e) }), 'error');
+        if (e instanceof ApiError && e.code === ErrCode.ERR_PLAN_NOT_FOUND) {
+          get().showToast(t('toast.todoNeedSave'), 'warning');
+        } else {
+          get().showToast(t('toast.addTodoFail', { msg: errMessage(e) }), 'error');
+        }
       }
     },
 
     updateTodo: async (taskId, todoId, patch) => {
+      if (!ensurePlanSavedForTodo()) return;
       const { plan, session } = get();
       if (!plan || !session.user) return;
       const planId = plan.planId;
@@ -1262,11 +1287,16 @@ export const useStore = create<StoreState>((set, get) => {
         const resp = await api.todoOp(planId, taskId, session.user, { op: 'update', todoId, patch: clean });
         applyTodoList(planId, taskId, resp.todos, resp.revision);
       } catch (e) {
-        get().showToast(t('toast.updateTodoFail', { msg: errMessage(e) }), 'error');
+        if (e instanceof ApiError && e.code === ErrCode.ERR_PLAN_NOT_FOUND) {
+          get().showToast(t('toast.todoNeedSave'), 'warning');
+        } else {
+          get().showToast(t('toast.updateTodoFail', { msg: errMessage(e) }), 'error');
+        }
       }
     },
 
     deleteTodo: async (taskId, todoId) => {
+      if (!ensurePlanSavedForTodo()) return;
       const { plan, session } = get();
       if (!plan || !session.user) return;
       const planId = plan.planId;
@@ -1274,11 +1304,16 @@ export const useStore = create<StoreState>((set, get) => {
         const resp = await api.todoOp(planId, taskId, session.user, { op: 'delete', todoId });
         applyTodoList(planId, taskId, resp.todos, resp.revision);
       } catch (e) {
-        get().showToast(t('toast.deleteTodoFail', { msg: errMessage(e) }), 'error');
+        if (e instanceof ApiError && e.code === ErrCode.ERR_PLAN_NOT_FOUND) {
+          get().showToast(t('toast.todoNeedSave'), 'warning');
+        } else {
+          get().showToast(t('toast.deleteTodoFail', { msg: errMessage(e) }), 'error');
+        }
       }
     },
 
     moveTodo: async (taskId, todoId, direction) => {
+      if (!ensurePlanSavedForTodo()) return;
       const { plan, session } = get();
       if (!plan || !session.user) return;
       const planId = plan.planId;
@@ -1286,7 +1321,11 @@ export const useStore = create<StoreState>((set, get) => {
         const resp = await api.todoOp(planId, taskId, session.user, { op: 'move', todoId, direction });
         applyTodoList(planId, taskId, resp.todos, resp.revision);
       } catch (e) {
-        get().showToast(t('toast.moveTodoFail', { msg: errMessage(e) }), 'error');
+        if (e instanceof ApiError && e.code === ErrCode.ERR_PLAN_NOT_FOUND) {
+          get().showToast(t('toast.todoNeedSave'), 'warning');
+        } else {
+          get().showToast(t('toast.moveTodoFail', { msg: errMessage(e) }), 'error');
+        }
       }
     },
 

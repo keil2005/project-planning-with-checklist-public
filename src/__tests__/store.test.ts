@@ -51,6 +51,7 @@ beforeEach(() => {
     session: { user: null, mode: 'READONLY', lockToken: null },
     todosRevision: 0,
     todoDrawerTaskId: null,
+    toast: null,
   });
 });
 
@@ -227,5 +228,44 @@ describe('f·store todo 动作', () => {
     expect(useStore.getState().todoDrawerTaskId).toBe('T-0001');
     useStore.getState().closeTodoDrawer();
     expect(useStore.getState().todoDrawerTaskId).toBeNull();
+  });
+});
+
+describe('f·store todo 未保存守门', () => {
+  /** 默认期望文案：与 src/i18n.tsx zh 段 `toast.todoNeedSave` 一致（保持用例就地可读） */
+  const TODO_NEED_SAVE_ZH = '请先保存计划，再管理 TODO';
+
+  it('dirty=true 时 addTodo 不发请求，且 toast 提示「请先保存计划」', async () => {
+    useStore.setState({
+      plan: makePlan(),
+      dirty: true, // 关键：模拟"新建计划后未保存"或"已修改但未保存"
+      session: { user: 'User01', mode: 'READONLY', lockToken: null },
+    });
+    const server = makeTodoServer();
+
+    await useStore.getState().addTodo('T-0001', '出原理图');
+
+    // 不发请求
+    expect(server.mock).not.toHaveBeenCalled();
+    // 本地 plan 的 todos 也未被修改
+    expect(useStore.getState().plan!.tasks[0].todos ?? []).toEqual([]);
+    // toast 显示新文案（warning 等级、明确指引）
+    expect(useStore.getState().toast?.message).toBe(TODO_NEED_SAVE_ZH);
+    expect(useStore.getState().toast?.severity).toBe('warning');
+  });
+
+  it('dirty=false 时 addTodo 正常走 api.todoOp（回归守门）', async () => {
+    useStore.setState({
+      plan: makePlan(),
+      dirty: false,
+      session: { user: 'User01', mode: 'READONLY', lockToken: null },
+    });
+    const server = makeTodoServer();
+
+    await useStore.getState().addTodo('T-0001', '出原理图');
+
+    expect(server.mock).toHaveBeenCalledTimes(1);
+    expect(useStore.getState().plan!.tasks[0].todos).toHaveLength(1);
+    expect(useStore.getState().toast).toBeNull();
   });
 });

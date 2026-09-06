@@ -463,6 +463,7 @@ const zh: Record<string, string> = {
   'toast.updateTodoFail': '更新 TODO 失败：{msg}',
   'toast.deleteTodoFail': '删除 TODO 失败：{msg}',
   'toast.moveTodoFail': '移动 TODO 失败：{msg}',
+  'toast.todoNeedSave': '请先保存计划，再管理 TODO',
 
   /* —— API 层错误 —— */
   'err.networkFail': '网络请求失败：{msg}',
@@ -869,6 +870,7 @@ const en: Record<string, string> = {
   'toast.updateTodoFail': 'Failed to update the TODO: {msg}',
   'toast.deleteTodoFail': 'Failed to delete the TODO: {msg}',
   'toast.moveTodoFail': 'Failed to move the TODO: {msg}',
+  'toast.todoNeedSave': 'Please save the plan before managing TODOs',
 
   /* —— API layer errors —— */
   'err.networkFail': 'Network request failed: {msg}',
