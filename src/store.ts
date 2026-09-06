@@ -53,6 +53,7 @@ import {
 import { collectPeople, normalizePeople, type PeopleField } from '../shared/people';
 import type { ColumnKey } from './columns';
 import { computeKeepIds, EMPTY_FILTER, collectColumnValues, type ColumnFilter, type FilterContext, type FilterState } from './filter';
+import { t } from './i18n';
 
 /* ============================ 类型 ============================ */
 
@@ -349,7 +350,7 @@ export const useStore = create<StoreState>((set, get) => {
           set({ lock: { ...lock, lockToken: null } });
         } catch (e) {
           if (e instanceof ApiError && (e.code === ErrCode.ERR_LOCK_LOST || e.code === ErrCode.ERR_NO_LOCK)) {
-            handleLockLost('编辑权已被回收，未保存的修改请复制备份后重新进入编辑模式');
+            handleLockLost(t('toast.lockLostRecycle'));
           }
         }
       })();
@@ -469,7 +470,7 @@ export const useStore = create<StoreState>((set, get) => {
       try {
         await get().loadCalendar();
       } catch (e) {
-        set({ toast: { message: `读取工作日历失败：${errMessage(e)}`, severity: 'warning' } });
+        set({ toast: { message: t('toast.loadCalendarFail', { msg: errMessage(e) }), severity: 'warning' } });
       }
 
       window.addEventListener('beforeunload', () => {
@@ -513,7 +514,7 @@ export const useStore = create<StoreState>((set, get) => {
       } catch (e) {
         // 网络错误：按未登录处理
         set({ authReady: true, authed: false });
-        set({ toast: { message: `探测登录态失败：${errMessage(e)}`, severity: 'warning' } });
+        set({ toast: { message: t('toast.probeSessionFail', { msg: errMessage(e) }), severity: 'warning' } });
       }
     },
 
@@ -594,7 +595,7 @@ export const useStore = create<StoreState>((set, get) => {
         const ws = await api.listWorkspaces();
         set({ workspaces: ws });
       } catch (e) {
-        get().showToast(`读取工作区列表失败：${errMessage(e)}`, 'error');
+        get().showToast(t('toast.loadWorkspacesFail', { msg: errMessage(e) }), 'error');
       }
     },
 
@@ -633,7 +634,7 @@ export const useStore = create<StoreState>((set, get) => {
       try {
         set({ plans: await api.listPlans() });
       } catch (e) {
-        get().showToast(`读取计划列表失败：${errMessage(e)}`, 'error');
+        get().showToast(t('toast.loadPlansFail', { msg: errMessage(e) }), 'error');
       }
     },
 
@@ -666,7 +667,7 @@ export const useStore = create<StoreState>((set, get) => {
         startPolling();
         startTodoPolling();
       } catch (e) {
-        get().showToast(`打开计划失败：${errMessage(e)}`, 'error');
+        get().showToast(t('toast.openPlanFail', { msg: errMessage(e) }), 'error');
       } finally {
         set({ busy: false });
       }
@@ -675,7 +676,7 @@ export const useStore = create<StoreState>((set, get) => {
     createPlan: async (name: string, notes: string, skipHolidays = false) => {
       const user = get().session.user;
       if (!user) {
-        get().showToast('请先选择身份', 'warning');
+        get().showToast(t('toast.pickIdentityFirst'), 'warning');
         return;
       }
       set({ busy: true });
@@ -684,9 +685,9 @@ export const useStore = create<StoreState>((set, get) => {
         set({ dialogs: { ...get().dialogs, planPicker: false } });
         await get().listPlans();
         await get().openPlan(plan.planId);
-        get().showToast(`计划「${plan.name}」已创建（v${plan.version}）`, 'success');
+        get().showToast(t('toast.planCreated', { name: plan.name, v: plan.version }), 'success');
       } catch (e) {
-        get().showToast(`新建计划失败：${errMessage(e)}`, 'error');
+        get().showToast(t('toast.createPlanFail', { msg: errMessage(e) }), 'error');
       } finally {
         set({ busy: false });
       }
@@ -695,7 +696,7 @@ export const useStore = create<StoreState>((set, get) => {
     importPlan: async (file: File) => {
       const user = get().session.user;
       if (!user) {
-        get().showToast('请先选择身份', 'warning');
+        get().showToast(t('toast.pickIdentityFirst'), 'warning');
         return;
       }
       set({ busy: true });
@@ -703,20 +704,20 @@ export const useStore = create<StoreState>((set, get) => {
         const content = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
-          reader.onerror = () => reject(reader.error ?? new Error('文件读取失败'));
+          reader.onerror = () => reject(reader.error ?? new Error(t('toast.fileReadFail')));
           reader.readAsDataURL(file);
         });
         const plan = await api.importPlan(file.name, content, user);
         // 导入即落盘为新计划（v1），直接打开即可；共享版可随后打开该原生 JSON
         await get().openPlan(plan.planId);
         await get().listPlans();
-        get().showToast(`已导入「${plan.name}」（v${plan.version}）`, 'success');
+        get().showToast(t('toast.imported', { name: plan.name, v: plan.version }), 'success');
       } catch (e) {
         if (e instanceof ApiError && e.code === ErrCode.ERR_FEATURE_DISABLED) {
-          get().showToast('本部署未启用 MPP 导入（本机需运行 server/mpxj/fetch-mpxj.sh 后重启服务）', 'warning');
+          get().showToast(t('toast.mppDisabled'), 'warning');
           return;
         }
-        get().showToast(`导入失败：${errMessage(e)}`, 'error');
+        get().showToast(t('toast.importFail', { msg: errMessage(e) }), 'error');
       } finally {
         set({ busy: false });
       }
@@ -731,7 +732,7 @@ export const useStore = create<StoreState>((set, get) => {
         get().recompute();
         await get().loadHistory();
       } catch (e) {
-        get().showToast(`刷新失败：${errMessage(e)}`, 'error');
+        get().showToast(t('toast.refreshFail', { msg: errMessage(e) }), 'error');
       }
     },
 
@@ -759,10 +760,10 @@ export const useStore = create<StoreState>((set, get) => {
         set({
           diagnostics: [
             ...prev,
-            diag('error', ErrCode.ERR_SCHEDULE, `排程计算出错：${errMessage(e)}`, undefined),
+            diag('error', ErrCode.ERR_SCHEDULE, t('toast.scheduleError', { msg: errMessage(e) }), undefined),
           ],
         });
-        get().showToast(`排程计算出错：${errMessage(e)}`, 'error');
+        get().showToast(t('toast.scheduleError', { msg: errMessage(e) }), 'error');
       }
     },
 
@@ -798,7 +799,7 @@ export const useStore = create<StoreState>((set, get) => {
         try {
           const saved = await api.putCalendar(cfg, editor, lock.lockToken ?? '');
           set({ calendarConfig: saved, calendar: buildWorkCalendar(saved), calendarSaving: false });
-          get().showToast('工作日历已保存', 'success');
+          get().showToast(t('toast.calendarSaved'), 'success');
         } finally {
           try {
             await api.releaseLock(GLOBAL_CALENDAR, editor, lock.lockToken ?? '');
@@ -808,7 +809,7 @@ export const useStore = create<StoreState>((set, get) => {
         }
       } catch (e) {
         set({ calendarSaving: false });
-        get().showToast(`保存工作日历失败：${errMessage(e)}`, 'error');
+        get().showToast(t('toast.saveCalendarFail', { msg: errMessage(e) }), 'error');
       }
     },
 
@@ -903,8 +904,8 @@ export const useStore = create<StoreState>((set, get) => {
         return { parseDiag: nextParse, selectedTaskId: null };
       });
       get().recompute();
-      const extra = clearedDeps > 0 ? `，同时清理了 ${clearedDeps} 条指向它的依赖` : '';
-      get().showToast(`已删除 ${doomed.size} 行${extra}`, 'info');
+      const extra = clearedDeps > 0 ? t('toast.deletedDepsExtra', { n: clearedDeps }) : '';
+      get().showToast(t('toast.deletedRows', { n: doomed.size, extra }), 'info');
     },
 
     indent: (taskId: string) => {
@@ -922,7 +923,7 @@ export const useStore = create<StoreState>((set, get) => {
         }
       }
       if (!prevSibling) {
-        get().showToast('已是本层第一行，无法缩进', 'info');
+        get().showToast(t('toast.indentFirst'), 'info');
         return;
       }
       const newParentId = prevSibling.id;
@@ -940,7 +941,7 @@ export const useStore = create<StoreState>((set, get) => {
       if (!plan) return;
       const self = plan.tasks.find((t) => t.id === taskId);
       if (!self || !self.parentId) {
-        get().showToast('已是顶层，无法升级', 'info');
+        get().showToast(t('toast.outdentTop'), 'info');
         return;
       }
       const parent = plan.tasks.find((t) => t.id === self.parentId);
@@ -969,7 +970,7 @@ export const useStore = create<StoreState>((set, get) => {
       const pos = siblings.findIndex((t) => t.id === taskId);
       const targetPos = pos + delta;
       if (targetPos < 0 || targetPos >= siblings.length) {
-        get().showToast('已到边界，无法移动', 'info');
+        get().showToast(t('toast.moveBoundary'), 'info');
         return;
       }
       const targetId = siblings[targetPos].id;
@@ -1010,7 +1011,7 @@ export const useStore = create<StoreState>((set, get) => {
       const { plan, session, dirty } = get();
       if (!plan || !session.user) return;
       if (get().preview) {
-        get().showToast('请先退出版本预览', 'info');
+        get().showToast(t('toast.exitPreviewFirst'), 'info');
         return;
       }
       try {
@@ -1022,15 +1023,15 @@ export const useStore = create<StoreState>((set, get) => {
         });
         stopPolling();
         startHeartbeat();
-        get().showToast('已进入编辑模式', 'success');
+        get().showToast(t('toast.editModeOn'), 'success');
       } catch (e) {
         if (e instanceof ApiError && e.code === ErrCode.ERR_LOCK_HELD) {
-          const holder = (e.data as { holder?: string } | null)?.holder ?? '他人';
+          const holder = (e.data as { holder?: string } | null)?.holder ?? t('toast.holderFallback');
           set({ lock: { ...(get().lock as LockState), status: 'EDITING', holder } });
-          get().showToast(`「${holder}」正在编辑，暂时无法获取编辑权`, 'warning');
+          get().showToast(t('toast.editingByOther', { holder }), 'warning');
           return;
         }
-        get().showToast(`获取编辑权失败：${errMessage(e)}`, 'error');
+        get().showToast(t('toast.acquireLockFail', { msg: errMessage(e) }), 'error');
       }
     },
 
@@ -1059,7 +1060,7 @@ export const useStore = create<StoreState>((set, get) => {
     save: async (notes: string) => {
       const { plan, session } = get();
       if (!plan || !session.user || !session.lockToken) {
-        get().showToast('请先进入编辑模式', 'warning');
+        get().showToast(t('toast.editModeFirst'), 'warning');
         return;
       }
       set({ busy: true, saveDiagnostics: [] });
@@ -1081,25 +1082,25 @@ export const useStore = create<StoreState>((set, get) => {
         get().recompute();
         await get().loadHistory();
         await get().listPlans();
-        get().showToast(`已保存为 v${resp.version}`, 'success');
+        get().showToast(t('toast.savedAs', { v: resp.version }), 'success');
       } catch (e) {
         if (e instanceof ApiError) {
           if (e.code === ErrCode.ERR_VALIDATION) {
             const diags = (e.data as { diagnostics?: Diagnostic[] } | null)?.diagnostics ?? [];
             set({ saveDiagnostics: diags });
-            get().showToast('存在阻断性错误，保存被拒绝', 'error');
+            get().showToast(t('toast.saveBlocked'), 'error');
             return;
           }
           if (e.code === ErrCode.ERR_LOCK_LOST || e.code === ErrCode.ERR_NO_LOCK) {
-            handleLockLost('编辑权已失效，保存失败。请重新进入编辑模式后再次保存');
+            handleLockLost(t('toast.lockLostOnSave'));
             return;
           }
           if (e.code === ErrCode.ERR_STALE_VERSION) {
-            get().showToast('服务端已有更新版本，请刷新后重做本次修改', 'error');
+            get().showToast(t('toast.staleVersion'), 'error');
             return;
           }
         }
-        get().showToast(`保存失败：${errMessage(e)}`, 'error');
+        get().showToast(t('toast.saveFail', { msg: errMessage(e) }), 'error');
       } finally {
         set({ busy: false });
       }
@@ -1112,7 +1113,7 @@ export const useStore = create<StoreState>((set, get) => {
       try {
         set({ history: await api.getHistory(plan.planId) });
       } catch (e) {
-        get().showToast(`读取变更记录失败：${errMessage(e)}`, 'error');
+        get().showToast(t('toast.loadHistoryFail', { msg: errMessage(e) }), 'error');
       }
     },
 
@@ -1120,7 +1121,7 @@ export const useStore = create<StoreState>((set, get) => {
       const plan = get().plan;
       if (!plan) return;
       if (get().dirty) {
-        get().showToast('有未保存的修改，请先保存或刷新后再预览历史版本', 'warning');
+        get().showToast(t('toast.dirtyBeforePreview'), 'warning');
         return;
       }
       if (get().session.mode === 'EDITING') await get().exitEditMode();
@@ -1136,7 +1137,7 @@ export const useStore = create<StoreState>((set, get) => {
         });
         get().recompute();
       } catch (e) {
-        get().showToast(`预览版本失败：${errMessage(e)}`, 'error');
+        get().showToast(t('toast.previewFail', { msg: errMessage(e) }), 'error');
       }
     },
 
@@ -1149,7 +1150,7 @@ export const useStore = create<StoreState>((set, get) => {
       const { plan, session } = get();
       if (!plan || !session.user) return;
       if (!session.lockToken || session.mode !== 'EDITING') {
-        get().showToast('回滚属于写操作，请先进入编辑模式', 'warning');
+        get().showToast(t('toast.restoreNeedEdit'), 'warning');
         return;
       }
       set({ busy: true });
@@ -1158,13 +1159,13 @@ export const useStore = create<StoreState>((set, get) => {
         set({ plan: normalizePlan(resp.plan), dirty: false, preview: null, parseDiag: {}, filter: EMPTY_FILTER, todoDrawerTaskId: null });
         get().recompute();
         await get().loadHistory();
-        get().showToast(`已回滚 v${version}，生成新版本 v${resp.version}`, 'success');
+        get().showToast(t('toast.restored', { from: version, to: resp.version }), 'success');
       } catch (e) {
         if (e instanceof ApiError && (e.code === ErrCode.ERR_LOCK_LOST || e.code === ErrCode.ERR_NO_LOCK)) {
-          handleLockLost('编辑权已失效，回滚失败');
+          handleLockLost(t('toast.lockLostOnRestore'));
           return;
         }
-        get().showToast(`回滚失败：${errMessage(e)}`, 'error');
+        get().showToast(t('toast.restoreFail', { msg: errMessage(e) }), 'error');
       } finally {
         set({ busy: false });
       }
@@ -1175,7 +1176,7 @@ export const useStore = create<StoreState>((set, get) => {
       const plan = get().plan;
       if (!plan) return;
       if (get().dirty) {
-        get().showToast('导出使用服务端最新版本，当前有未保存修改不会包含在内', 'warning');
+        get().showToast(t('toast.exportStale'), 'warning');
       }
       window.open(api.exportUrl(plan.planId, format), '_blank');
     },
@@ -1189,11 +1190,11 @@ export const useStore = create<StoreState>((set, get) => {
       if (!plan) return;
       const me = get().session.user;
       if (scope === 'mine' && (!me || me.trim() === '')) {
-        get().showToast('未选择身份，无法导出「仅与我相关」', 'warning');
+        get().showToast(t('toast.needIdentityToExport'), 'warning');
         return;
       }
       if (get().dirty) {
-        get().showToast('导出使用服务端最新版本，当前有未保存修改不会包含在内', 'warning');
+        get().showToast(t('toast.exportStale'), 'warning');
       }
       const url =
         scope === 'mine'
@@ -1231,16 +1232,16 @@ export const useStore = create<StoreState>((set, get) => {
      * 合并回 plan（不置脏、不 recompute）。任何登录用户都可操作，不要求排他锁。
      */
     addTodo: async (taskId, text) => {
-      const t = text.trim();
-      if (t === '') return;
+      const trimmed = text.trim();
+      if (trimmed === '') return;
       const { plan, session } = get();
       if (!plan || !session.user) return;
       const planId = plan.planId;
       try {
-        const resp = await api.todoOp(planId, taskId, session.user, { op: 'add', text: t });
+        const resp = await api.todoOp(planId, taskId, session.user, { op: 'add', text: trimmed });
         applyTodoList(planId, taskId, resp.todos, resp.revision);
       } catch (e) {
-        get().showToast(`添加 TODO 失败：${errMessage(e)}`, 'error');
+        get().showToast(t('toast.addTodoFail', { msg: errMessage(e) }), 'error');
       }
     },
 
@@ -1261,7 +1262,7 @@ export const useStore = create<StoreState>((set, get) => {
         const resp = await api.todoOp(planId, taskId, session.user, { op: 'update', todoId, patch: clean });
         applyTodoList(planId, taskId, resp.todos, resp.revision);
       } catch (e) {
-        get().showToast(`更新 TODO 失败：${errMessage(e)}`, 'error');
+        get().showToast(t('toast.updateTodoFail', { msg: errMessage(e) }), 'error');
       }
     },
 
@@ -1273,7 +1274,7 @@ export const useStore = create<StoreState>((set, get) => {
         const resp = await api.todoOp(planId, taskId, session.user, { op: 'delete', todoId });
         applyTodoList(planId, taskId, resp.todos, resp.revision);
       } catch (e) {
-        get().showToast(`删除 TODO 失败：${errMessage(e)}`, 'error');
+        get().showToast(t('toast.deleteTodoFail', { msg: errMessage(e) }), 'error');
       }
     },
 
@@ -1285,7 +1286,7 @@ export const useStore = create<StoreState>((set, get) => {
         const resp = await api.todoOp(planId, taskId, session.user, { op: 'move', todoId, direction });
         applyTodoList(planId, taskId, resp.todos, resp.revision);
       } catch (e) {
-        get().showToast(`移动 TODO 失败：${errMessage(e)}`, 'error');
+        get().showToast(t('toast.moveTodoFail', { msg: errMessage(e) }), 'error');
       }
     },
 

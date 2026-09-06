@@ -16,6 +16,7 @@ import type { Task, TaskComputed } from '../shared/types';
 import { normalizePeople } from '../shared/people';
 import { formatDuration } from '../shared/datetime';
 import { formatDepsExpr } from '../shared/scheduler';
+import { t } from './i18n';
 
 /* ============================ 类型 ============================ */
 
@@ -53,21 +54,23 @@ export type TextOp = 'contains' | 'notContains' | 'startsWith' | 'equals';
 /** 早于 / 不早于 / 介于（含两端）—— 文案刻意避免「大于小于」的歧义 */
 export type DateOp = 'before' | 'onOrAfter' | 'between';
 
-export const TEXT_OP_LABEL: Record<TextOp, string> = {
-  contains: '包含',
-  notContains: '不包含',
-  startsWith: '开头是',
-  equals: '等于',
-};
+/** 文本/日期操作符的下拉顺序（渲染顺序稳定；文案走 i18n：filter.op*） */
+export const TEXT_OPS: readonly TextOp[] = ['contains', 'notContains', 'startsWith', 'equals'] as const;
+export const DATE_OPS: readonly DateOp[] = ['before', 'onOrAfter', 'between'] as const;
 
-export const DATE_OP_LABEL: Record<DateOp, string> = {
-  before: '早于',
-  onOrAfter: '不早于',
-  between: '介于（含两端）',
-};
+/** 操作符文案（i18n；zh 值与 v1.2.0 前的硬编码完全一致） */
+export function textOpLabel(op: TextOp): string {
+  return t(`filter.op${op.charAt(0).toUpperCase()}${op.slice(1)}`);
+}
+
+export function dateOpLabel(op: DateOp): string {
+  return t(`filter.op${op.charAt(0).toUpperCase()}${op.slice(1)}`);
+}
 
 /** 空值在值列表里的显示文案（对齐 Excel 的「(空白)」） */
-export const BLANK_LABEL = '(空白)';
+export function blankLabel(): string {
+  return t('filter.blankLabel');
+}
 
 /** 视图态筛选条件 */
 export interface FilterState {
@@ -273,21 +276,21 @@ export function activeColumnKeys(f: FilterState, order: readonly ColumnKey[]): C
   return order.filter((k) => f.byColumn[k] !== undefined);
 }
 
-/** 单列筛选的自然语言摘要（FilterBar 的 chip 文案） */
+/** 单列筛选的自然语言摘要（FilterBar 的 chip 文案；zh 值与既有测试断言逐字一致） */
 export function describeColumnFilter(key: ColumnKey, f: ColumnFilter, label: string): string {
-  // 全角冒号后不再加空格（中文排版）
-  const head = `${label}：`;
   if (f.kind === 'text') {
-    return f.value.trim() === '' ? `${head}${TEXT_OP_LABEL[f.op]}…` : `${head}${TEXT_OP_LABEL[f.op]}「${f.value}」`;
+    return f.value.trim() === ''
+      ? t('filter.descTextEmpty', { label, op: textOpLabel(f.op) })
+      : t('filter.descText', { label, op: textOpLabel(f.op), v: f.value });
   }
   if (f.kind === 'date') {
-    if (f.op === 'between') return `${head}${f.from || '?'} ~ ${f.to || '?'}`;
-    return `${head}${DATE_OP_LABEL[f.op]} ${f.from || '?'}`;
+    if (f.op === 'between') return t('filter.descDateBetween', { label, from: f.from || '?', to: f.to || '?' });
+    return t('filter.descDateOp', { label, op: dateOpLabel(f.op), from: f.from || '?' });
   }
   const n = f.values.length;
-  if (n === 0) return `${head}${f.blanks ? '仅空值' : '（无）'}`;
-  const shown = f.values.slice(0, 2).join('、');
-  const more = n > 2 ? ` 等 ${n} 项` : '';
-  const blank = f.blanks ? ' + 空值' : '';
-  return `${head}${shown}${more}${blank}`;
+  if (n === 0) return f.blanks ? t('filter.descEnumBlanksOnly', { label }) : t('filter.descEnumNone', { label });
+  const shown = f.values.slice(0, 2).join(t('filter.enumSep'));
+  const more = n > 2 ? t('filter.descEnumMore', { n }) : '';
+  const blank = f.blanks ? t('filter.descEnumBlank') : '';
+  return t('filter.descEnum', { label, shown, more, blank });
 }

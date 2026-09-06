@@ -21,7 +21,6 @@ import { formatPeople } from '../../shared/people';
 import { addDays, diffDays, formatDuration, formatISODate, parseISODate, todayISO } from '../../shared/datetime';
 import {
   DAY_WIDTH,
-  DERIVE_SOURCE_LABEL,
   ErrCode,
   HEAD_H,
   ROW_H,
@@ -29,6 +28,7 @@ import {
   type Task,
   type TaskComputed,
 } from '../../shared/types';
+import { deriveLabel, t, useT, useLangStore } from '../i18n';
 
 /* ============================ 常量 ============================ */
 
@@ -107,7 +107,13 @@ function buildAxis(rangeStart: ISODate, totalDays: number, dayWidth: number): Ax
     const x = segStart.diff(start, 'day') * dayWidth;
     const w = segEnd.diff(segStart, 'day') * dayWidth;
     if (w > 0) {
-      top.push({ x, w, label: monthMode ? cursor.format('YYYY 年') : cursor.format('YYYY 年 M 月') });
+      top.push({
+        x,
+        w,
+        label: monthMode
+          ? t('gantt.yearLabel', { y: cursor.year() })
+          : t('gantt.yearMonthLabel', { y: cursor.year(), m: cursor.month() + 1 }),
+      });
     }
     cursor = next;
   }
@@ -121,7 +127,7 @@ function buildAxis(rangeStart: ISODate, totalDays: number, dayWidth: number): Ax
       const segEnd = next.isAfter(endExclusive) ? endExclusive : next;
       const x = segStart.diff(start, 'day') * dayWidth;
       const w = segEnd.diff(segStart, 'day') * dayWidth;
-      if (w > 0) ticks.push({ x, w, label: `${m.month() + 1}月`, strong: true, weekend: false });
+      if (w > 0) ticks.push({ x, w, label: t('gantt.month', { m: m.month() + 1 }), strong: true, weekend: false });
       m = next;
     }
     return { top, ticks };
@@ -203,6 +209,8 @@ export interface GanttChartProps {
 }
 
 export default function GanttChart({ scrollRef, onScroll }: GanttChartProps): JSX.Element {
+  const tr = useT();
+  const lang = useLangStore((s) => s.lang); // 进 axis/dayCells 的 useMemo 依赖：切语言时重建本地化标签
   const plan = useStore((s) => s.plan);
   const sched = useStore((s) => s.sched);
   const diagnostics = useStore((s) => s.diagnostics);
@@ -235,7 +243,7 @@ export default function GanttChart({ scrollRef, onScroll }: GanttChartProps): JS
 
   const axis = useMemo(
     () => buildAxis(range.rangeStart, range.totalDays, dayWidth),
-    [range.rangeStart, range.totalDays, dayWidth],
+    [range.rangeStart, range.totalDays, dayWidth, lang],
   );
 
   const xOf = (date: ISODate): number => diffDays(range.rangeStart, date) * dayWidth;
@@ -250,13 +258,13 @@ export default function GanttChart({ scrollRef, onScroll }: GanttChartProps): JS
     for (let i = 0; i < range.totalDays; i += 1) {
       const d = formatISODate(start.add(i, 'day'));
       if (calendar.isHoliday(d)) {
-        out.push({ x: i * dayWidth, w: dayWidth, type: 'holiday', date: d, label: calendar.labelOf(d) ?? '节假日' });
+        out.push({ x: i * dayWidth, w: dayWidth, type: 'holiday', date: d, label: calendar.labelOf(d) ?? t('gantt.holiday') });
       } else if (calendar.isMakeup(d)) {
-        out.push({ x: i * dayWidth, w: dayWidth, type: 'makeup', date: d, label: '补班' });
+        out.push({ x: i * dayWidth, w: dayWidth, type: 'makeup', date: d, label: t('gantt.makeup') });
       }
     }
     return out;
-  }, [calendar, range.rangeStart, range.totalDays, dayWidth]);
+  }, [calendar, range.rangeStart, range.totalDays, dayWidth, lang]);
 
   /* ---- 行索引 & 冲突集合 ---- */
   const rowOf = useMemo(() => {
@@ -465,7 +473,7 @@ export default function GanttChart({ scrollRef, onScroll }: GanttChartProps): JS
                       y={0}
                       width={c.w}
                       height={4}
-                      onMouseEnter={() => setDayHover({ x: c.x, label: '补班', date: c.date })}
+                      onMouseEnter={() => setDayHover({ x: c.x, label: c.label, date: c.date })}
                     />
                   </g>
                 ),
@@ -599,16 +607,16 @@ export default function GanttChart({ scrollRef, onScroll }: GanttChartProps): JS
               style={{ left: hover.x + 8, top: hover.y + HEAD_H + ROW_H, maxWidth: 260 }}
             >
               <div className="mb-[2px] font-semibold">
-                行{hover.task.seq}　{hover.task.name || '（未命名）'}
+                {tr('diag.rowN', { seq: hover.task.seq })}　{hover.task.name || tr('gantt.unnamed')}
               </div>
+              <div>{tr('gantt.range', { start: hover.computed.start, end: hover.computed.end })}</div>
               <div>
-                区间：{hover.computed.start} → {hover.computed.end}（半开，不含结束日）
+                {tr('gantt.durationSrc', {
+                  dur: formatDuration(hover.computed.duration),
+                  src: deriveLabel(hover.computed.derivedFrom),
+                })}
               </div>
-              <div>
-                时长：{formatDuration(hover.computed.duration)}　来源：
-                {DERIVE_SOURCE_LABEL[hover.computed.derivedFrom]}
-              </div>
-              {hover.computed.isParent && <div className="text-slate-500">父任务：时间由子任务汇总</div>}
+              {hover.computed.isParent && <div className="text-slate-500">{tr('gantt.parentSummary')}</div>}
             </div>
           )}
 
@@ -629,29 +637,29 @@ export default function GanttChart({ scrollRef, onScroll }: GanttChartProps): JS
       <div className="pg-panel-footer">
         <span className="inline-flex items-center gap-1">
           <span style={{ width: 14, height: 8, background: COLOR.bar, display: 'inline-block', borderRadius: 2 }} />
-          任务
+          {tr('gantt.legendTask')}
         </span>
         <span className="inline-flex items-center gap-1">
           <span style={{ width: 14, height: 6, background: COLOR.summary, display: 'inline-block' }} />
-          父任务汇总
+          {tr('gantt.legendSummary')}
         </span>
         <span className="inline-flex items-center gap-1">
           <span style={{ width: 14, height: 0, borderTop: `2px dashed ${COLOR.linkErr}`, display: 'inline-block' }} />
-          依赖冲突
+          {tr('gantt.legendConflict')}
         </span>
         <span className="inline-flex items-center gap-1">
           <span style={{ width: 14, height: 8, background: '#fee2e2', display: 'inline-block', borderRadius: 2 }} />
-          法定假日
+          {tr('gantt.legendHoliday')}
         </span>
         <span className="inline-flex items-center gap-1">
           <span style={{ width: 14, height: 4, background: '#f59e0b', display: 'inline-block', borderRadius: 2 }} />
-          补班日
+          {tr('gantt.legendMakeup')}
         </span>
         <span className="inline-flex items-center gap-1">
           <span style={{ width: 14, height: 8, background: COLOR.weekend, display: 'inline-block', borderRadius: 2 }} />
-          周末
+          {tr('gantt.legendWeekend')}
         </span>
-        <span>条形区间为 [开始, 结束)，结束日不占用工期</span>
+        <span>{tr('gantt.legendRange')}</span>
       </div>
     </div>
   );

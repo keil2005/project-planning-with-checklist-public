@@ -9,6 +9,7 @@
  */
 
 import { ErrCode, type ApiResp } from '../shared/types';
+import { t } from './i18n';
 import type {
   CalendarConfigData,
   ExportFormat,
@@ -68,14 +69,14 @@ async function request<T>(path: string, method = 'GET', body?: unknown): Promise
   try {
     res = await fetch(`${BASE}${path}`, init);
   } catch (e) {
-    throw new ApiError(ErrCode.ERR_INTERNAL, `网络请求失败：${String(e)}`);
+    throw new ApiError(ErrCode.ERR_INTERNAL, t('err.networkFail', { msg: String(e) }));
   }
 
   let payload: ApiResp<T> | null = null;
   try {
     payload = (await res.json()) as ApiResp<T>;
   } catch {
-    throw new ApiError(ErrCode.ERR_INTERNAL, `服务响应异常（HTTP ${res.status}）`);
+    throw new ApiError(ErrCode.ERR_INTERNAL, t('err.badResponse', { status: res.status }));
   }
 
   if (!payload || payload.code !== ErrCode.OK) {

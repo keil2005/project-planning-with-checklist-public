@@ -27,15 +27,18 @@ import FilterAltIcon from '@mui/icons-material/FilterAlt';
 import { useStore, useColumnValues } from '../store';
 import type { ColumnKey } from '../columns';
 import {
-  BLANK_LABEL,
-  DATE_OP_LABEL,
-  TEXT_OP_LABEL,
+  blankLabel,
+  DATE_OPS,
+  dateOpLabel,
+  TEXT_OPS,
+  textOpLabel,
   defaultFilterFor,
   filterKindOf,
   type DateOp,
   type EnumFilter,
   type TextOp,
 } from '../filter';
+import { useT } from '../i18n';
 
 export interface ColumnFilterMenuProps {
   columnKey: ColumnKey;
@@ -44,6 +47,7 @@ export interface ColumnFilterMenuProps {
 }
 
 export default function ColumnFilterMenu({ columnKey, label }: ColumnFilterMenuProps): JSX.Element | null {
+  const tr = useT();
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [query, setQuery] = useState<string>('');
 
@@ -105,7 +109,7 @@ export default function ColumnFilterMenu({ columnKey, label }: ColumnFilterMenuP
       <TextField
         size="small"
         fullWidth
-        placeholder="搜索"
+        placeholder={tr('filter.searchPlaceholder')}
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         inputProps={{ className: 'pg-filter-input' }}
@@ -120,10 +124,10 @@ export default function ColumnFilterMenu({ columnKey, label }: ColumnFilterMenuP
               onChange={(e) => commitEnum(e.target.checked ? allValues : [], e.target.checked ? eff.blanks : false)}
             />
           }
-          label={<span className="pg-filter-label">（全选）</span>}
+          label={<span className="pg-filter-label">{tr('filter.selectAll')}</span>}
         />
         <Divider />
-        {shownValues.length === 0 && <div className="pg-filter-empty">无匹配值</div>}
+        {shownValues.length === 0 && <div className="pg-filter-empty">{tr('filter.noMatch')}</div>}
         {shownValues.map((v) => (
           <FormControlLabel
             key={v}
@@ -142,7 +146,7 @@ export default function ColumnFilterMenu({ columnKey, label }: ColumnFilterMenuP
             control={
               <Checkbox size="small" checked={eff.blanks} onChange={(e) => commitEnum(eff.values, e.target.checked)} />
             }
-            label={<span className="pg-filter-label pg-filter-label--blank">{BLANK_LABEL}</span>}
+            label={<span className="pg-filter-label pg-filter-label--blank">{blankLabel()}</span>}
           />
         )}
       </div>
@@ -155,16 +159,16 @@ export default function ColumnFilterMenu({ columnKey, label }: ColumnFilterMenuP
     const f = current && current.kind === 'text' ? current : { kind: 'text' as const, op: 'contains' as TextOp, value: '' };
     return (
       <>
-        <div className="pg-filter-title">显示名称{TEXT_OP_LABEL[f.op]}：</div>
+        <div className="pg-filter-title">{tr('filter.textTitle', { op: textOpLabel(f.op) })}</div>
         <ToggleButtonGroup
           size="small"
           exclusive
           value={f.op}
           onChange={(_e, v: TextOp | null) => v && setColumnFilter(columnKey, { kind: 'text', op: v, value: f.value })}
         >
-          {(Object.keys(TEXT_OP_LABEL) as TextOp[]).map((op) => (
+          {TEXT_OPS.map((op) => (
             <ToggleButton key={op} value={op} className="pg-filter-toggle">
-              {TEXT_OP_LABEL[op]}
+              {textOpLabel(op)}
             </ToggleButton>
           ))}
         </ToggleButtonGroup>
@@ -172,12 +176,12 @@ export default function ColumnFilterMenu({ columnKey, label }: ColumnFilterMenuP
           size="small"
           fullWidth
           autoFocus
-          placeholder="关键词"
+          placeholder={tr('filter.keywordPlaceholder')}
           value={f.value}
           onChange={(e) => setColumnFilter(columnKey, { kind: 'text', op: f.op, value: e.target.value })}
           inputProps={{ className: 'pg-filter-input' }}
         />
-        <div className="pg-filter-hint">留空 = 该列不筛选</div>
+        <div className="pg-filter-hint">{tr('filter.textHint')}</div>
       </>
     );
   };
@@ -195,9 +199,9 @@ export default function ColumnFilterMenu({ columnKey, label }: ColumnFilterMenuP
       <>
         <div className="pg-filter-title">{label}：</div>
         <ToggleButtonGroup size="small" exclusive value={f.op} onChange={(_e, v: DateOp | null) => v && setOp(v)}>
-          {(Object.keys(DATE_OP_LABEL) as DateOp[]).map((op) => (
+          {DATE_OPS.map((op) => (
             <ToggleButton key={op} value={op} className="pg-filter-toggle">
-              {DATE_OP_LABEL[op]}
+              {dateOpLabel(op)}
             </ToggleButton>
           ))}
         </ToggleButtonGroup>
@@ -209,7 +213,7 @@ export default function ColumnFilterMenu({ columnKey, label }: ColumnFilterMenuP
         />
         {f.op === 'between' && (
           <>
-            <div className="pg-filter-title">至</div>
+            <div className="pg-filter-title">{tr('filter.dateTo')}</div>
             <input
               type="date"
               className="pg-date-input"
@@ -218,18 +222,18 @@ export default function ColumnFilterMenu({ columnKey, label }: ColumnFilterMenuP
             />
           </>
         )}
-        <div className="pg-filter-hint">空日期的行不参与日期筛选</div>
+        <div className="pg-filter-hint">{tr('filter.dateHint')}</div>
       </>
     );
   };
 
   return (
     <>
-      <Tooltip title={active ? `已筛选「${label}」，点击修改` : `筛选「${label}」`}>
+      <Tooltip title={active ? tr('filter.menuActive', { label }) : tr('filter.menuIdle', { label })}>
         <IconButton
           size="small"
           className={`pg-th-filter ${active ? 'pg-th-filter--on' : ''}`}
-          aria-label={`筛选${label}`}
+          aria-label={tr('filter.menuAria', { label })}
           onClick={(e) => {
             e.stopPropagation();
             setAnchor(e.currentTarget);
@@ -253,11 +257,11 @@ export default function ColumnFilterMenu({ columnKey, label }: ColumnFilterMenuP
           <Divider />
           <div className="pg-filter-actions">
             <Button size="small" disabled={!active} onClick={clear}>
-              清除本列
+              {tr('filter.clearColumn')}
             </Button>
             <div style={{ flex: 1 }} />
             <Button size="small" onClick={close}>
-              关闭
+              {tr('common.close')}
             </Button>
           </div>
         </div>

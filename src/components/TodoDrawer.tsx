@@ -29,6 +29,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import { useCanEditTodo, useOwnerCandidates, useStore } from '../store';
 import { todosProgress } from '../../shared/todo';
+import { useT } from '../i18n';
 import type { TodoItem } from '../../shared/types';
 
 /* ============================ 单个 todo 项 ============================ */
@@ -43,6 +44,7 @@ interface TodoRowProps {
 }
 
 function TodoRow({ taskId, todo, index, total, disabled, candidates }: TodoRowProps): JSX.Element {
+  const tr = useT();
   const updateTodo = useStore((s) => s.updateTodo);
   const deleteTodo = useStore((s) => s.deleteTodo);
   const moveTodo = useStore((s) => s.moveTodo);
@@ -77,7 +79,7 @@ function TodoRow({ taskId, todo, index, total, disabled, candidates }: TodoRowPr
         size="small"
         checked={todo.done}
         disabled={disabled}
-        inputProps={{ 'aria-label': `标记「${todo.text}」完成` }}
+        inputProps={{ 'aria-label': tr('todo.markDoneAria', { text: todo.text }) }}
         onChange={(e) => void updateTodo(taskId, todo.id, { done: e.target.checked })}
       />
       <textarea
@@ -106,7 +108,7 @@ function TodoRow({ taskId, todo, index, total, disabled, candidates }: TodoRowPr
         <IconButton
           size="small"
           disabled={disabled || index <= 0}
-          aria-label={`上移 TODO「${todo.text}」`}
+          aria-label={tr('todo.moveUpAria', { text: todo.text })}
           onClick={() => void moveTodo(taskId, todo.id, -1)}
         >
           <ArrowUpwardIcon fontSize="small" />
@@ -114,7 +116,7 @@ function TodoRow({ taskId, todo, index, total, disabled, candidates }: TodoRowPr
         <IconButton
           size="small"
           disabled={disabled || index >= total - 1}
-          aria-label={`下移 TODO「${todo.text}」`}
+          aria-label={tr('todo.moveDownAria', { text: todo.text })}
           onClick={() => void moveTodo(taskId, todo.id, 1)}
         >
           <ArrowDownwardIcon fontSize="small" />
@@ -122,7 +124,7 @@ function TodoRow({ taskId, todo, index, total, disabled, candidates }: TodoRowPr
         <IconButton
           size="small"
           disabled={disabled}
-          aria-label={`删除 TODO「${todo.text}」`}
+          aria-label={tr('todo.deleteAria', { text: todo.text })}
           onClick={() => void deleteTodo(taskId, todo.id)}
         >
           <DeleteOutlineIcon fontSize="small" />
@@ -142,6 +144,7 @@ interface AssigneeProps {
 }
 
 function AutocompleteAssignee({ value, disabled, candidates, onCommit }: AssigneeProps): JSX.Element {
+  const tr = useT();
   return (
     <Autocomplete
       freeSolo
@@ -156,7 +159,7 @@ function AutocompleteAssignee({ value, disabled, candidates, onCommit }: Assigne
         return opts.filter((o) => o.toLowerCase().includes(q));
       }}
       onChange={(_e, v) => onCommit(typeof v === 'string' ? v.trim() : '')}
-      renderInput={(params) => <TextField {...params} variant="standard" placeholder="负责人（可选）" />}
+      renderInput={(params) => <TextField {...params} variant="standard" placeholder={tr('todo.assigneePlaceholder')} />}
       sx={{ width: 132, flex: '0 0 132px' }}
     />
   );
@@ -165,6 +168,7 @@ function AutocompleteAssignee({ value, disabled, candidates, onCommit }: Assigne
 /* ============================ 抽屉主体 ============================ */
 
 export default function TodoDrawer(): JSX.Element {
+  const tr = useT();
   const plan = useStore((s) => s.plan);
   const todoDrawerTaskId = useStore((s) => s.todoDrawerTaskId);
   const closeTodoDrawer = useStore((s) => s.closeTodoDrawer);
@@ -194,13 +198,15 @@ export default function TodoDrawer(): JSX.Element {
         <div className="pg-todo-head">
           <div className="min-w-0">
             <Typography className="pg-todo-title" noWrap>
-              {task?.name || '未命名任务'}
+              {task?.name || tr('todo.unnamedTask')}
             </Typography>
             <Typography className="pg-todo-subtitle">
-              TODO 交付清单 · {total === 0 ? '暂无' : `${done}/${total} 已完成`}
+              {total === 0
+                ? tr('todo.headerNone')
+                : tr('todo.headerProgress', { done, total })}
             </Typography>
           </div>
-          <IconButton size="small" aria-label="关闭 TODO 抽屉" onClick={closeTodoDrawer}>
+          <IconButton size="small" aria-label={tr('todo.closeAria')} onClick={closeTodoDrawer}>
             <CloseIcon fontSize="small" />
           </IconButton>
         </div>
@@ -208,7 +214,7 @@ export default function TodoDrawer(): JSX.Element {
         {/* 明细列表 */}
         <div className="pg-todo-list">
           {todos.length === 0 ? (
-            <div className="pg-todo-empty">还没有 TODO 项，在下方输入第一条交付成果。</div>
+            <div className="pg-todo-empty">{tr('todo.emptyHint')}</div>
           ) : (
             todos.map((td, i) => (
               <TodoRow
@@ -229,7 +235,7 @@ export default function TodoDrawer(): JSX.Element {
           <TextField
             size="small"
             variant="outlined"
-            placeholder={canEdit ? '添加一项交付成果，回车确认' : '预览模式不可添加'}
+            placeholder={canEdit ? tr('todo.addInputEdit') : tr('todo.addInputPreview')}
             value={newText}
             disabled={!canEdit}
             onChange={(e) => setNewText(e.target.value)}
@@ -242,7 +248,7 @@ export default function TodoDrawer(): JSX.Element {
             sx={{ flex: 1 }}
           />
           <Button variant="contained" size="small" disabled={!canEdit || newText.trim() === ''} onClick={submitNew}>
-            添加
+            {tr('todo.addBtn')}
           </Button>
         </div>
       </Box>

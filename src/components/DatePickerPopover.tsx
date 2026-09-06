@@ -12,6 +12,7 @@ import IconButton from '@mui/material/IconButton';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import type { WorkCalendar } from '../../shared/types';
+import { t, useT } from '../i18n';
 
 interface Props {
   anchorEl: HTMLElement | null;
@@ -22,8 +23,6 @@ interface Props {
   onClose: () => void;
 }
 
-const WEEK_LABELS = ['日', '一', '二', '三', '四', '五', '六'];
-
 function pad2(n: number): string {
   return String(n).padStart(2, '0');
 }
@@ -32,7 +31,13 @@ function toISO(y: number, m: number, d: number): string {
   return `${y}-${pad2(m + 1)}-${pad2(d)}`;
 }
 
+/** 星期表头（i18n：单键逗号分隔，避免 7 个零碎键） */
+function weekLabels(): string[] {
+  return t('cal.weekLabels').split(',');
+}
+
 export default function DatePickerPopover({ anchorEl, open, value, calendar, onSelect, onClose }: Props): JSX.Element {
+  const tr = useT();
   // 初始视图月份：优先取 value，否则今天
   const init = parseMonth(value);
   const [view, setView] = useState<{ y: number; m: number }>(init);
@@ -64,9 +69,7 @@ export default function DatePickerPopover({ anchorEl, open, value, calendar, onS
           <IconButton size="small" onClick={() => shiftMonth(-1)}>
             <ChevronLeftIcon fontSize="small" />
           </IconButton>
-          <span style={{ fontWeight: 600 }}>
-            {view.y} 年 {view.m + 1} 月
-          </span>
+          <span style={{ fontWeight: 600 }}>{tr('cal.monthTitle', { y: view.y, m: view.m + 1 })}</span>
           <IconButton size="small" onClick={() => shiftMonth(1)}>
             <ChevronRightIcon fontSize="small" />
           </IconButton>
@@ -74,7 +77,7 @@ export default function DatePickerPopover({ anchorEl, open, value, calendar, onS
 
         {/* 星期表头 */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', textAlign: 'center', color: '#94a3b8', marginBottom: 2 }}>
-          {WEEK_LABELS.map((w) => (
+          {weekLabels().map((w) => (
             <div key={w} style={{ padding: '2px 0' }}>
               {w}
             </div>
@@ -98,7 +101,7 @@ export default function DatePickerPopover({ anchorEl, open, value, calendar, onS
               <button
                 key={iso}
                 type="button"
-                title={label ?? (nonWorking ? '非工作日' : weekend ? '周末' : '')}
+                title={label ?? (nonWorking ? tr('cal.nonWorking') : weekend ? tr('cal.weekend') : '')}
                 onClick={() => {
                   onSelect(iso);
                   onClose();
@@ -121,10 +124,10 @@ export default function DatePickerPopover({ anchorEl, open, value, calendar, onS
 
         <div style={{ marginTop: 6, fontSize: 11, color: '#94a3b8', display: 'flex', gap: 10 }}>
           <span>
-            <span style={{ display: 'inline-block', width: 10, height: 10, background: '#fee2e2', borderRadius: 2, verticalAlign: 'middle' }} /> 非工作日
+            <span style={{ display: 'inline-block', width: 10, height: 10, background: '#fee2e2', borderRadius: 2, verticalAlign: 'middle' }} /> {tr('cal.nonWorking')}
           </span>
           <span>
-            <span style={{ display: 'inline-block', width: 10, height: 10, background: '#f1f5f9', borderRadius: 2, verticalAlign: 'middle' }} /> 周末
+            <span style={{ display: 'inline-block', width: 10, height: 10, background: '#f1f5f9', borderRadius: 2, verticalAlign: 'middle' }} /> {tr('cal.weekend')}
           </span>
         </div>
       </div>

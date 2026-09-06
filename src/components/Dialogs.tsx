@@ -1,12 +1,15 @@
 /**
  * src/components/Dialogs.tsx —— 全部对话框集合。
  *
- *   UserGateDialog    启动强制「登录」（来源 GET /api/users，选择后由 store 记入 localStorage），每次启动第一步
  *   PlanPickerDialog  计划列表 + 新建计划（名称 + 首版变更纪要必填）
  *   SaveNotesDialog   保存：变更纪要必填（前端禁用 + 服务端二次校验，K12），失败展示 diagnostics
  *   HistoryDrawer     版本列表 → 预览（只读）/ 回滚为新版本（二次确认 + 纪要必填）
+ *   NonWorkingDayDialog 非工作日确认
+ *   CalendarSettingsDialog 工作日历设置
+ *   ExportTodosDialog Markdown TODO 导出（U05）
  *
  * 约束：所有版本号一律由服务端生成，此处显示的「将生成 v(n+1)」仅为预期值提示（K13）。
+ * v1.2.0：文案全部走 i18n（t('dlg.*')）；旧 UserGateDialog 已由 AuthGate 取代并删除。
  */
 
 import { useEffect, useMemo, useState } from 'react';
@@ -32,7 +35,8 @@ import TextField from '@mui/material/TextField';
 import CloseIcon from '@mui/icons-material/Close';
 import { useStore } from '../store';
 import { formatTimestampLocal, isValidISODate, nextWorkingDay } from '../../shared/datetime';
-import { ERR_CODE_LABEL, NOTES_MAX_LEN, type CalendarConfigData, type Diagnostic } from '../../shared/types';
+import { NOTES_MAX_LEN, type CalendarConfigData, type Diagnostic } from '../../shared/types';
+import { useT, errLabel } from '../i18n';
 
 /* ============================ 公共片段 ============================ */
 
@@ -44,11 +48,12 @@ interface NotesFieldProps {
 }
 
 /** 变更纪要输入框（必填，长度上限 NOTES_MAX_LEN） */
-function NotesField({ value, onChange, label = '变更纪要（必填）', autoFocus = false }: NotesFieldProps): JSX.Element {
+function NotesField({ value, onChange, label, autoFocus = false }: NotesFieldProps): JSX.Element {
+  const tr = useT();
   const over = value.length > NOTES_MAX_LEN;
   return (
     <TextField
-      label={label}
+      label={label ?? tr('dlg.notesLabel')}
       value={value}
       onChange={(e) => onChange(e.target.value)}
       multiline
@@ -58,84 +63,26 @@ function NotesField({ value, onChange, label = '变更纪要（必填）', autoF
       autoFocus={autoFocus}
       error={over}
       inputProps={{ maxLength: NOTES_MAX_LEN + 50 }}
-      helperText={`${value.length}/${NOTES_MAX_LEN}　说明本次改了什么、为什么改，便于日后追溯`}
-      placeholder="例：联调依赖调整为 3FF+1w，上线日相应后移"
+      helperText={tr('dlg.notesHelper', { n: value.length, max: NOTES_MAX_LEN })}
+      placeholder={tr('dlg.notesPlaceholder')}
     />
   );
 }
 
 function DiagnosticList({ items }: { items: Diagnostic[] }): JSX.Element | null {
+  const tr = useT();
   if (items.length === 0) return null;
   return (
     <Alert severity="error" className="mt-2">
-      <div className="mb-1 font-semibold">服务端校验未通过，请先修复以下问题：</div>
+      <div className="mb-1 font-semibold">{tr('dlg.serverRejected')}</div>
       <ul className="ml-4 list-disc">
         {items.map((d, i) => (
           <li key={`${d.code}-${d.taskId ?? ''}-${i}`} className="text-[12px]">
-            [{d.code}] {ERR_CODE_LABEL[d.code] ?? ''}：{d.message}
+            [{d.code}] {errLabel(d.code)}：{d.message}
           </li>
         ))}
       </ul>
     </Alert>
-  );
-}
-
-/* ============================ 身份选择 ============================ */
-
-function UserGateDialog(): JSX.Element {
-  const open = useStore((s) => s.dialogs.user);
-  const users = useStore((s) => s.users);
-  const current = useStore((s) => s.session.user);
-  const setUser = useStore((s) => s.setUser);
-  const closeDialog = useStore((s) => s.closeDialog);
-
-  const [filter, setFilter] = useState<string>('');
-  const forced = current === null;
-  const shown = users.filter((u) => u.toLowerCase().includes(filter.trim().toLowerCase()));
-
-  return (
-    <Dialog
-      open={open}
-      maxWidth="xs"
-      fullWidth
-      disableEscapeKeyDown={forced}
-      onClose={() => {
-        if (!forced) closeDialog('user');
-      }}
-    >
-      <DialogTitle>登录</DialogTitle>
-      <DialogContent dividers>
-        <DialogContentText className="mb-2 text-[12px]">
-          请选择你的名字登录。名单为系统内置成员，可在表格「负责人」列联想选择；每次启动需先登录以确认本次操作人。
-        </DialogContentText>
-        <TextField
-          className="mb-2"
-          size="small"
-          fullWidth
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          placeholder="筛选名单（子串，大小写不敏感）"
-          inputProps={{ 'aria-label': '筛选用户名单' }}
-        />
-        <List dense>
-          {shown.length === 0 ? (
-            <ListItemText primary="无匹配名单" primaryTypographyProps={{ variant: 'body2', color: 'text.secondary' }} />
-          ) : (
-            shown.map((u) => (
-              <ListItemButton key={u} selected={u === current} onClick={() => void setUser(u)}>
-                <ListItemText primary={u} />
-                {u === current && <Chip size="small" label="当前" />}
-              </ListItemButton>
-            ))
-          )}
-        </List>
-      </DialogContent>
-      <DialogActions>
-        <Button disabled={forced} onClick={() => closeDialog('user')}>
-          关闭
-        </Button>
-      </DialogActions>
-    </Dialog>
   );
 }
 
@@ -150,6 +97,7 @@ function PlanPickerDialog(): JSX.Element {
   const openPlan = useStore((s) => s.openPlan);
   const createPlan = useStore((s) => s.createPlan);
   const closeDialog = useStore((s) => s.closeDialog);
+  const tr = useT();
 
   const [creating, setCreating] = useState<boolean>(false);
   const [name, setName] = useState<string>('');
@@ -174,14 +122,14 @@ function PlanPickerDialog(): JSX.Element {
   return (
     <Dialog open={open} maxWidth="sm" fullWidth onClose={() => closeDialog('planPicker')}>
       <DialogTitle className="flex items-center justify-between">
-        <span>打开或新建计划</span>
+        <span>{tr('dlg.openOrCreate')}</span>
         <IconButton size="small" onClick={() => closeDialog('planPicker')}>
           <CloseIcon fontSize="small" />
         </IconButton>
       </DialogTitle>
       <DialogContent dividers>
         {plans.length === 0 ? (
-          <Alert severity="info">还没有任何计划，请先新建一个。</Alert>
+          <Alert severity="info">{tr('dlg.noPlans')}</Alert>
         ) : (
           <List dense>
             {plans.map((p) => (
@@ -195,10 +143,10 @@ function PlanPickerDialog(): JSX.Element {
                     <span className="flex items-center gap-2">
                       <span className="font-medium">{p.name}</span>
                       <Chip size="small" variant="outlined" label={`v${p.version}`} />
-                      <Chip size="small" variant="outlined" label={`${p.taskCount} 行`} />
+                      <Chip size="small" variant="outlined" label={tr('dlg.rowCount', { n: p.taskCount })} />
                     </span>
                   }
-                  secondary={`${formatTimestampLocal(p.updatedAt)}　最后修改：${p.updatedBy}`}
+                  secondary={tr('dlg.lastModified', { time: formatTimestampLocal(p.updatedAt), by: p.updatedBy })}
                 />
               </ListItemButton>
             ))}
@@ -210,14 +158,14 @@ function PlanPickerDialog(): JSX.Element {
         {creating ? (
           <div className="flex flex-col gap-3">
             <TextField
-              label="计划名称"
+              label={tr('dlg.planName')}
               value={name}
               autoFocus
               fullWidth
               onChange={(e) => setName(e.target.value)}
-              placeholder="例：2026 Q4 产品交付计划"
+              placeholder={tr('dlg.planNamePlaceholder')}
             />
-            <NotesField value={notes} onChange={setNotes} label="首版变更纪要（必填）" />
+            <NotesField value={notes} onChange={setNotes} label={tr('dlg.firstNotesLabel')} />
             <FormControlLabel
               control={
                 <Checkbox
@@ -228,29 +176,27 @@ function PlanPickerDialog(): JSX.Element {
               }
               label={
                 <span className="flex flex-col text-[13px]">
-                  <span>排程跳过国定节假日（与调休补班）</span>
-                  <span className="text-[11px] text-slate-500">
-                    开启后本计划按真实工作日历排程；关闭则每天都算工作日（仅周末视为非工作日）。
-                  </span>
+                  <span>{tr('dlg.skipHolidays')}</span>
+                  <span className="text-[11px] text-slate-500">{tr('dlg.skipHolidaysHint')}</span>
                 </span>
               }
             />
           </div>
         ) : (
           <Button variant="outlined" onClick={() => setCreating(true)}>
-            新建计划
+            {tr('dlg.newPlan')}
           </Button>
         )}
       </DialogContent>
       <DialogActions>
-        <Button onClick={() => closeDialog('planPicker')}>取消</Button>
+        <Button onClick={() => closeDialog('planPicker')}>{tr('common.cancel')}</Button>
         {creating && (
           <Button
             variant="contained"
             disabled={!canCreate}
             onClick={() => void createPlan(name.trim(), notes.trim(), skipHolidays)}
           >
-            创建
+            {tr('dlg.create')}
           </Button>
         )}
       </DialogActions>
@@ -267,6 +213,7 @@ function SaveNotesDialog(): JSX.Element {
   const saveDiagnostics = useStore((s) => s.saveDiagnostics);
   const save = useStore((s) => s.save);
   const closeDialog = useStore((s) => s.closeDialog);
+  const tr = useT();
 
   const [notes, setNotes] = useState<string>('');
 
@@ -279,19 +226,18 @@ function SaveNotesDialog(): JSX.Element {
 
   return (
     <Dialog open={open} maxWidth="sm" fullWidth onClose={() => closeDialog('save')}>
-      <DialogTitle>保存并生成新版本</DialogTitle>
+      <DialogTitle>{tr('dlg.saveTitle')}</DialogTitle>
       <DialogContent dividers>
         <DialogContentText className="mb-2 text-[12px]">
-          将在服务端追加一条不可篡改的历史记录，预计生成 <b>v{expected}</b>
-          （最终版本号由服务端分配）。当前基线版本 v{plan?.version ?? '-'}。
+          {tr('dlg.saveBody', { next: expected, cur: plan?.version ?? '-' })}
         </DialogContentText>
         <NotesField value={notes} onChange={setNotes} autoFocus />
         <DiagnosticList items={saveDiagnostics} />
       </DialogContent>
       <DialogActions>
-        <Button onClick={() => closeDialog('save')}>取消</Button>
+        <Button onClick={() => closeDialog('save')}>{tr('common.cancel')}</Button>
         <Button variant="contained" disabled={!canSubmit} onClick={() => void save(notes.trim())}>
-          保存
+          {tr('common.save')}
         </Button>
       </DialogActions>
     </Dialog>
@@ -311,6 +257,7 @@ function HistoryDrawer(): JSX.Element {
   const previewVersion = useStore((s) => s.previewVersion);
   const restoreVersion = useStore((s) => s.restoreVersion);
   const closeDialog = useStore((s) => s.closeDialog);
+  const tr = useT();
 
   const [restoreTarget, setRestoreTarget] = useState<number | null>(null);
   const [notes, setNotes] = useState<string>('');
@@ -325,7 +272,7 @@ function HistoryDrawer(): JSX.Element {
 
   const openRestore = (version: number): void => {
     setRestoreTarget(version);
-    setNotes(`回滚到 v${version}`);
+    setNotes(tr('dlg.restoreNotesDefault', { v: version }));
   };
 
   return (
@@ -334,8 +281,11 @@ function HistoryDrawer(): JSX.Element {
         <div className="flex h-full w-[420px] flex-col">
           <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2">
             <div className="text-[14px] font-semibold">
-              变更记录{plan ? ` · ${plan.name}` : ''}
-              <span className="ml-2 text-[12px] font-normal text-slate-500">共 {sorted.length} 个版本</span>
+              {tr('dlg.historyTitle')}
+              {plan ? tr('dlg.historyPlanSuffix', { name: plan.name }) : ''}
+              <span className="ml-2 text-[12px] font-normal text-slate-500">
+                {tr('dlg.versionCount', { n: sorted.length })}
+              </span>
             </div>
             <IconButton size="small" onClick={() => closeDialog('history')}>
               <CloseIcon fontSize="small" />
@@ -344,13 +294,13 @@ function HistoryDrawer(): JSX.Element {
 
           {mode !== 'EDITING' && (
             <Alert severity="info" className="m-2 text-[12px]">
-              回滚属于写操作，需先在工具栏获取编辑权；预览为只读操作，随时可用。
+              {tr('dlg.historyHint')}
             </Alert>
           )}
 
           <div className="min-h-0 flex-1 overflow-auto">
             {sorted.length === 0 ? (
-              <div className="p-3 text-[12px] text-slate-500">暂无历史记录。</div>
+              <div className="p-3 text-[12px] text-slate-500">{tr('dlg.noHistory')}</div>
             ) : (
               <List dense>
                 {sorted.map((v) => {
@@ -362,15 +312,15 @@ function HistoryDrawer(): JSX.Element {
                         <Chip size="small" color={isCurrent ? 'primary' : 'default'} label={`v${v.version}`} />
                         <span className="text-[12px] text-slate-600">{formatTimestampLocal(v.timestamp)}</span>
                         <span className="text-[12px] font-medium">{v.editor}</span>
-                        {isCurrent && <Chip size="small" variant="outlined" label="当前" />}
-                        {isPreviewing && <Chip size="small" color="warning" label="预览中" />}
+                        {isCurrent && <Chip size="small" variant="outlined" label={tr('dlg.current')} />}
+                        {isPreviewing && <Chip size="small" color="warning" label={tr('dlg.previewing')} />}
                       </div>
                       <div className="mt-1 whitespace-pre-wrap break-words text-[12px] text-slate-700">
                         {v.notes}
                       </div>
                       <div className="mt-1 flex gap-2">
                         <Button size="small" variant="text" onClick={() => void previewVersion(v.version)}>
-                          预览
+                          {tr('dlg.preview')}
                         </Button>
                         <Button
                           size="small"
@@ -379,7 +329,7 @@ function HistoryDrawer(): JSX.Element {
                           disabled={mode !== 'EDITING'}
                           onClick={() => openRestore(v.version)}
                         >
-                          回滚为新版本
+                          {tr('dlg.restoreAsNew')}
                         </Button>
                       </div>
                     </div>
@@ -393,16 +343,15 @@ function HistoryDrawer(): JSX.Element {
 
       {/* 回滚二次确认 */}
       <Dialog open={restoreTarget !== null} maxWidth="sm" fullWidth onClose={() => setRestoreTarget(null)}>
-        <DialogTitle>回滚为新版本</DialogTitle>
+        <DialogTitle>{tr('dlg.restoreAsNew')}</DialogTitle>
         <DialogContent dividers>
           <DialogContentText className="mb-2 text-[12px]">
-            将把 <b>v{restoreTarget}</b> 的内容作为一个<b>新版本</b>追加到历史末尾（历史只增不改，原版本不会被删除）。
-            预计生成 v{plan ? plan.version + 1 : '-'}。
+            {tr('dlg.restoreBody', { target: restoreTarget ?? '-', next: plan ? plan.version + 1 : '-' })}
           </DialogContentText>
-          <NotesField value={notes} onChange={setNotes} label="回滚原因（必填）" autoFocus />
+          <NotesField value={notes} onChange={setNotes} label={tr('dlg.restoreReasonLabel')} autoFocus />
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setRestoreTarget(null)}>取消</Button>
+          <Button onClick={() => setRestoreTarget(null)}>{tr('common.cancel')}</Button>
           <Button
             variant="contained"
             color="warning"
@@ -413,7 +362,7 @@ function HistoryDrawer(): JSX.Element {
               if (target !== null) void restoreVersion(target, notes.trim());
             }}
           >
-            确认回滚
+            {tr('dlg.confirmRestore')}
           </Button>
         </DialogActions>
       </Dialog>
@@ -428,11 +377,12 @@ function NonWorkingDayDialog(): JSX.Element {
   const calendar = useStore((s) => s.calendar);
   const updateCell = useStore((s) => s.updateCell);
   const close = useStore((s) => s.closeNonWorkingPrompt);
+  const tr = useT();
 
   const open = pending !== null;
   const date = pending?.value ?? '';
   const label = calendar && date ? calendar.labelOf(date) : null;
-  const display = label ?? '周末';
+  const display = label ?? tr('dlg.weekend');
 
   const keep = (): void => {
     if (!pending) return;
@@ -451,20 +401,23 @@ function NonWorkingDayDialog(): JSX.Element {
 
   return (
     <Dialog open={open} maxWidth="xs" fullWidth onClose={close}>
-      <DialogTitle>非工作日提示</DialogTitle>
+      <DialogTitle>{tr('dlg.nonWorkTitle')}</DialogTitle>
       <DialogContent dividers>
         <DialogContentText className="text-[13px]">
-          你填写的{pending?.field === 'start' ? '开始' : '结束'}日期 <b>{date}</b> 为 <b>{display}</b>
-          ，并非工作日（周末或法定假日）。确认仍用，还是顺延到下一工作日？
+          {tr('dlg.nonWorkBody', {
+            field: pending?.field === 'start' ? tr('col.start') : tr('col.end'),
+            date,
+            display,
+          })}
         </DialogContentText>
       </DialogContent>
       <DialogActions>
-        <Button onClick={close}>取消</Button>
+        <Button onClick={close}>{tr('common.cancel')}</Button>
         <Button color="warning" variant="outlined" onClick={defer}>
-          顺延到下一工作日（{calendar && date ? nextWorkingDay(date, calendar) : ''}）
+          {tr('dlg.deferToNext', { d: calendar && date ? nextWorkingDay(date, calendar) : '' })}
         </Button>
         <Button variant="contained" onClick={keep}>
-          仍用该日
+          {tr('dlg.keepDate')}
         </Button>
       </DialogActions>
     </Dialog>
@@ -483,11 +436,12 @@ interface CalendarSectionProps {
 }
 
 function CalendarSection({ title, items, newVal, onNewChange, onAdd, onRemove }: CalendarSectionProps): JSX.Element {
+  const tr = useT();
   return (
     <div className="mb-3">
       <div className="mb-1 text-[12px] font-semibold text-slate-700">{title}</div>
       <div className="flex flex-wrap gap-1">
-        {items.length === 0 && <span className="text-[12px] text-slate-400">（空）</span>}
+        {items.length === 0 && <span className="text-[12px] text-slate-400">{tr('dlg.emptyList')}</span>}
         {items.map((d) => (
           <Chip key={d} size="small" label={d} onDelete={() => onRemove(d)} />
         ))}
@@ -501,7 +455,7 @@ function CalendarSection({ title, items, newVal, onNewChange, onAdd, onRemove }:
           InputLabelProps={{ shrink: true }}
         />
         <Button size="small" variant="outlined" disabled={!isValidISODate(newVal)} onClick={() => onAdd(newVal)}>
-          添加
+          {tr('common.add')}
         </Button>
       </div>
     </div>
@@ -523,6 +477,7 @@ function CalendarSettingsDialog(): JSX.Element | null {
   const user = useStore((s) => s.session.user);
   const closeDialog = useStore((s) => s.closeDialog);
   const saveCalendarConfig = useStore((s) => s.saveCalendarConfig);
+  const tr = useT();
 
   const [draft, setDraft] = useState<CalendarConfigData | null>(null);
   const [year, setYear] = useState<number>(2026);
@@ -585,15 +540,13 @@ function CalendarSettingsDialog(): JSX.Element | null {
   return (
     <Dialog open={open} maxWidth="sm" fullWidth onClose={() => closeDialog('calendar')}>
       <DialogTitle className="flex items-center justify-between">
-        <span>工作日历设置</span>
+        <span>{tr('dlg.calendarTitle')}</span>
         <IconButton size="small" onClick={() => closeDialog('calendar')}>
           <CloseIcon fontSize="small" />
         </IconButton>
       </DialogTitle>
       <DialogContent dividers>
-        <DialogContentText className="mb-2 text-[12px]">
-          维护自定义节假日 / 补班日 / 移除的官方假日（按年份）。保存前会自动获取全局日历编辑锁。
-        </DialogContentText>
+        <DialogContentText className="mb-2 text-[12px]">{tr('dlg.calendarHint')}</DialogContentText>
 
         <div className="mb-3 flex flex-wrap gap-1">
           {yearList.map((y) => (
@@ -609,7 +562,7 @@ function CalendarSettingsDialog(): JSX.Element | null {
           <Chip
             size="small"
             variant="outlined"
-            label="+ 当前年"
+            label={tr('dlg.addCurrentYear')}
             onClick={() => {
               const y = new Date().getFullYear();
               setDraft((prev) => (prev ? ensureYear(clone(prev), y) : prev));
@@ -619,7 +572,7 @@ function CalendarSettingsDialog(): JSX.Element | null {
         </div>
 
         <CalendarSection
-          title="自定义节假日（userHolidays）"
+          title={tr('dlg.userHolidays')}
           items={hol}
           newVal={newDate.hol}
           onNewChange={(v) => setNewDate((p) => ({ ...p, hol: v }))}
@@ -627,7 +580,7 @@ function CalendarSettingsDialog(): JSX.Element | null {
           onRemove={(d) => removeDate('hol', d)}
         />
         <CalendarSection
-          title="补班日（makeup）"
+          title={tr('dlg.makeupDays')}
           items={mk}
           newVal={newDate.mk}
           onNewChange={(v) => setNewDate((p) => ({ ...p, mk: v }))}
@@ -635,7 +588,7 @@ function CalendarSettingsDialog(): JSX.Element | null {
           onRemove={(d) => removeDate('mk', d)}
         />
         <CalendarSection
-          title="移除的官方假日（userRemoved）"
+          title={tr('dlg.userRemoved')}
           items={rm}
           newVal={newDate.rm}
           onNewChange={(v) => setNewDate((p) => ({ ...p, rm: v }))}
@@ -644,9 +597,9 @@ function CalendarSettingsDialog(): JSX.Element | null {
         />
       </DialogContent>
       <DialogActions>
-        <Button onClick={() => closeDialog('calendar')}>取消</Button>
+        <Button onClick={() => closeDialog('calendar')}>{tr('common.cancel')}</Button>
         <Button variant="contained" disabled={!canSubmit} onClick={submit}>
-          {saving ? '保存中…' : '保存'}
+          {saving ? tr('dlg.saving') : tr('common.save')}
         </Button>
       </DialogActions>
     </Dialog>
@@ -665,6 +618,7 @@ function ExportTodosDialog(): JSX.Element | null {
   const user = useStore((s) => s.session.user);
   const closeDialog = useStore((s) => s.closeDialog);
   const exportTodos = useStore((s) => s.exportTodos);
+  const tr = useT();
 
   const [scope, setScope] = useState<'mine' | 'all'>('mine');
 
@@ -683,20 +637,18 @@ function ExportTodosDialog(): JSX.Element | null {
   };
 
   const hasUser = !!user && user.trim() !== '';
-  const userLabel = hasUser ? user : '未选身份';
+  const userLabel = hasUser ? user : tr('exportMd.noIdentity');
 
   return (
     <Dialog open={open} maxWidth="xs" fullWidth onClose={handleClose}>
       <DialogTitle className="flex items-center justify-between">
-        <span>导出 Markdown TODO 清单</span>
-        <IconButton size="small" onClick={handleClose} aria-label="关闭">
+        <span>{tr('exportMd.title')}</span>
+        <IconButton size="small" onClick={handleClose} aria-label={tr('common.close')}>
           <CloseIcon fontSize="small" />
         </IconButton>
       </DialogTitle>
       <DialogContent dividers>
-        <DialogContentText className="mb-2 text-[13px]">
-          选择导出范围。生成 Markdown 文件，包含任务元信息与每条 todo（[x]/[ ] + 文本 + 责任人）。
-        </DialogContentText>
+        <DialogContentText className="mb-2 text-[13px]">{tr('exportMd.desc')}</DialogContentText>
         <RadioGroup
           value={scope}
           onChange={(e) => setScope(e.target.value as 'mine' | 'all')}
@@ -707,7 +659,7 @@ function ExportTodosDialog(): JSX.Element | null {
             disabled={!hasUser}
             label={
               <span>
-                仅与我相关
+                {tr('exportMd.mine')}
                 <span className={hasUser ? 'ml-1 text-slate-500' : 'ml-1 text-slate-400'}>
                   （{userLabel}）
                 </span>
@@ -717,23 +669,23 @@ function ExportTodosDialog(): JSX.Element | null {
           <FormControlLabel
             value="all"
             control={<Radio />}
-            label="全部（所有任务 + 全部 TODO + 责任人）"
+            label={tr('exportMd.allLabel')}
           />
         </RadioGroup>
         {!hasUser && (
           <Alert severity="info" className="mt-2 text-[12px]">
-            「仅与我相关」需要先选择身份（工具栏「选择身份」处登录）。
+            {tr('exportMd.needIdentity')}
           </Alert>
         )}
       </DialogContent>
       <DialogActions>
-        <Button onClick={handleClose}>取消</Button>
+        <Button onClick={handleClose}>{tr('common.cancel')}</Button>
         <Button
           variant="contained"
           onClick={handleOk}
           disabled={scope === 'mine' && !hasUser}
         >
-          下载
+          {tr('exportMd.download')}
         </Button>
       </DialogActions>
     </Dialog>

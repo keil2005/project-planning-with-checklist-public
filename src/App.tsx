@@ -27,7 +27,8 @@ import TodoDrawer from './components/TodoDrawer';
 import Toolbar from './components/Toolbar';
 import ErrorBoundary from './components/ErrorBoundary';
 import { useStore } from './store';
-import { ERR_CODE_LABEL, type Diagnostic } from '../shared/types';
+import { useT, errLabel } from './i18n';
+import type { Diagnostic } from '../shared/types';
 
 /* ============================ 诊断条 ============================ */
 
@@ -36,6 +37,7 @@ function DiagnosticsBar(): JSX.Element | null {
   const plan = useStore((s) => s.plan);
   const selectTask = useStore((s) => s.selectTask);
   const [open, setOpen] = useState(true);
+  const tr = useT();
 
   const { errors, warns } = useMemo(() => {
     return {
@@ -49,7 +51,7 @@ function DiagnosticsBar(): JSX.Element | null {
   const seqOf = (taskId?: string): string => {
     if (!taskId) return '-';
     const t = plan.tasks.find((x) => x.id === taskId);
-    return t ? `行${t.seq}` : taskId;
+    return t ? tr('diag.rowN', { seq: t.seq }) : taskId;
   };
 
   const renderItem = (d: Diagnostic, i: number): JSX.Element => (
@@ -66,7 +68,7 @@ function DiagnosticsBar(): JSX.Element | null {
     >
       <span className="font-semibold">{seqOf(d.taskId)}</span>
       <span className="opacity-70">[{d.code}]</span>
-      <span className="truncate">{ERR_CODE_LABEL[d.code] ?? ''}：{d.message}</span>
+      <span className="truncate">{errLabel(d.code)}：{d.message}</span>
     </button>
   );
 
@@ -74,14 +76,14 @@ function DiagnosticsBar(): JSX.Element | null {
     <div className="border-b border-slate-200 bg-slate-50 px-3 py-1">
       <div className="flex items-center gap-3">
         <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-red-600">
-          <ErrorOutlineIcon fontSize="inherit" /> {errors.length} 个错误
+          <ErrorOutlineIcon fontSize="inherit" /> {tr('diag.errors', { n: errors.length })}
         </span>
         <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-amber-600">
-          <WarningAmberIcon fontSize="inherit" /> {warns.length} 个提醒
+          <WarningAmberIcon fontSize="inherit" /> {tr('diag.warns', { n: warns.length })}
         </span>
-        <span className="text-[12px] text-slate-500">（错误会阻止保存，点击可定位到行）</span>
+        <span className="text-[12px] text-slate-500">{tr('diag.hint')}</span>
         <div className="flex-1" />
-        <IconButton onClick={() => setOpen((v) => !v)} title={open ? '折叠' : '展开'}>
+        <IconButton onClick={() => setOpen((v) => !v)} title={open ? tr('diag.collapse') : tr('diag.expand')}>
           {open ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
         </IconButton>
       </div>
@@ -100,6 +102,7 @@ function DiagnosticsBar(): JSX.Element | null {
 function CalendarBanner(): JSX.Element | null {
   const calendar = useStore((s) => s.calendar);
   const calendarLoading = useStore((s) => s.calendarLoading);
+  const tr = useT();
   if (calendarLoading || !calendar) return null;
 
   const curYear = new Date().getFullYear();
@@ -110,14 +113,14 @@ function CalendarBanner(): JSX.Element | null {
     return (
       <div className="pg-banner pg-banner--ok">
         <span className="pg-banner__dot" />
-        工作日历已生效（覆盖年份 {years}）
+        {tr('banner.calendarOk', { years })}
       </div>
     );
   }
   return (
     <div className="pg-banner pg-banner--warn">
       <span className="pg-banner__dot pg-banner__dot--warn" />
-      当前年份（{curYear}）未在日历覆盖范围内，已降级为仅周末规则
+      {tr('banner.calendarWarn', { year: curYear })}
     </div>
   );
 }
@@ -127,15 +130,16 @@ function CalendarBanner(): JSX.Element | null {
 function EmptyState(): JSX.Element {
   const openDialog = useStore((s) => s.openDialog);
   const user = useStore((s) => s.session.user);
+  const tr = useT();
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 text-slate-500">
-      <div className="text-[15px]">尚未打开任何计划</div>
+      <div className="text-[15px]">{tr('empty.title')}</div>
       <div className="flex gap-2">
         <Button variant="contained" disabled={!user} onClick={() => openDialog('planPicker')}>
-          打开 / 新建计划
+          {tr('empty.openPlan')}
         </Button>
       </div>
-      {!user && <div className="text-[12px]">请先选择身份</div>}
+      {!user && <div className="text-[12px]">{tr('empty.pickUserFirst')}</div>}
     </div>
   );
 }
@@ -150,6 +154,7 @@ export default function App(): JSX.Element {
   const clearToast = useStore((s) => s.clearToast);
   const preview = useStore((s) => s.preview);
   const exitPreview = useStore((s) => s.exitPreview);
+  const tr = useT();
 
   useEffect(() => {
     void init();
@@ -180,13 +185,13 @@ export default function App(): JSX.Element {
 
       {preview && (
         <div className="flex items-center gap-2 border-b border-amber-300 bg-amber-50 px-3 py-1 text-[12px] text-amber-800">
-          <Chip size="small" color="warning" label={`正在预览 v${preview.version}（只读）`} />
+          <Chip size="small" color="warning" label={tr('preview.banner', { version: preview.version })} />
           <span className="truncate">
-            由 {preview.editor} 提交：{preview.notes}
+            {tr('preview.by', { editor: preview.editor, notes: preview.notes })}
           </span>
           <div className="flex-1" />
           <Button size="small" variant="outlined" color="warning" onClick={() => void exitPreview()}>
-            退出预览
+            {tr('preview.exit')}
           </Button>
         </div>
       )}

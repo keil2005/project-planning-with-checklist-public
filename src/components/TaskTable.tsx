@@ -61,8 +61,8 @@ import {
 import { formatDuration, isValidISODate } from '../../shared/datetime';
 import { formatPeople, normalizePeople } from '../../shared/people';
 import { todosProgress } from '../../shared/todo';
+import { deriveLabel, useT } from '../i18n';
 import {
-  DERIVE_SOURCE_LABEL,
   ErrCode,
   ROW_H,
   type Diagnostic,
@@ -245,6 +245,7 @@ interface PeopleCellProps {
  */
 function PeopleCell(props: PeopleCellProps): JSX.Element {
   const { value, disabled, candidates, label, onCommit, onEditingChange } = props;
+  const tr = useT();
   const [editing, setEditing] = useState<boolean>(false);
   const [inputValue, setInputValue] = useState<string>('');
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -324,7 +325,13 @@ function PeopleCell(props: PeopleCellProps): JSX.Element {
       <div
         className={`pg-input ${disabled ? 'pg-input--disabled' : ''}`}
         style={disabled ? undefined : { cursor: 'pointer' }}
-        title={disabled ? text || undefined : `点击设置${label}${text ? `（当前：${text}）` : ''}`}
+        title={
+          disabled
+            ? text || undefined
+            : text
+              ? tr('task.clickToSetCur', { field: label, current: text })
+              : tr('task.clickToSet', { field: label })
+        }
         onClick={startEdit}
       >
         {text !== '' ? (
@@ -414,7 +421,7 @@ function PeopleCell(props: PeopleCellProps): JSX.Element {
             <li {...optionProps}>
               {isFree ? (
                 <span>
-                  添加 <strong>&ldquo;{option}&rdquo;</strong>
+                  {tr('task.addFreePrefix')} <strong>&ldquo;{option}&rdquo;</strong>
                 </span>
               ) : (
                 <span style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
@@ -432,7 +439,7 @@ function PeopleCell(props: PeopleCellProps): JSX.Element {
             variant="standard"
             size="small"
             autoFocus
-            placeholder={value.length > 0 ? '继续添加…' : `输入或选择${label}`}
+            placeholder={value.length > 0 ? tr('task.keepAdding') : tr('task.typeToSelect', { field: label })}
             sx={{
               '& .MuiInputBase-root': { minHeight: 24, fontSize: 12, flexWrap: 'wrap' },
               '& .MuiInput-underline:before': { borderBottom: 'none' },
@@ -453,6 +460,7 @@ function PeopleCell(props: PeopleCellProps): JSX.Element {
  * 视觉语义：0 项 → 灰「—」；0/n → 灰；部分完成 → 琥珀；全完成 → 绿。
  */
 function TodoBadge({ task }: { task: Task }): JSX.Element {
+  const tr = useT();
   const openTodoDrawer = useStore((s) => s.openTodoDrawer);
   const { done, total } = todosProgress(task.todos);
 
@@ -468,8 +476,16 @@ function TodoBadge({ task }: { task: Task }): JSX.Element {
     <button
       type="button"
       className={`pg-todo-badge pg-todo-badge--${tone}`}
-      title={total === 0 ? '暂无 TODO，点击添加' : `TODO ${done}/${total}，点击查看 / 编辑`}
-      aria-label={total === 0 ? '暂无 TODO，点击添加' : `TODO ${done}/${total}，点击查看或编辑`}
+      title={
+        total === 0
+          ? tr('todo.emptyAdd')
+          : tr('todo.progressTitle', { done, total })
+      }
+      aria-label={
+        total === 0
+          ? tr('todo.emptyAdd')
+          : tr('todo.progressAria', { done, total })
+      }
       onClick={() => openTodoDrawer(task.id)}
     >
       {label}
@@ -500,6 +516,7 @@ interface RowProps {
 
 function TaskRow(props: RowProps): JSX.Element {
   const { task, computed, depth, isParent, collapsed, idToSeq, diagnostics, canEdit, canAdd, selected, gridStyle } = props;
+  const tr = useT();
 
   const updateCell = useStore((s) => s.updateCell);
   const updatePeople = useStore((s) => s.updatePeople);
@@ -541,7 +558,7 @@ function TaskRow(props: RowProps): JSX.Element {
   const srcEnd = computed?.fieldSources.end ?? 'INPUT';
   const srcDuration = computed?.fieldSources.duration ?? 'INPUT';
 
-  const parentTip = '由子任务汇总，不可手填';
+  const parentTip = tr('derive.parentTip');
   const timeDisabled = !canEdit || isParent;
 
   // 筛选生效时不允许插入：新行会被立刻过滤掉，看起来像「点了没反应」
@@ -574,7 +591,7 @@ function TaskRow(props: RowProps): JSX.Element {
           <IconButton
             size="small"
             style={{ padding: 0, width: 18, height: 18 }}
-            title={collapsed ? '展开子任务' : '折叠子任务'}
+            title={collapsed ? tr('task.expandChildren') : tr('task.collapseChildren')}
             onClick={(e) => {
               e.stopPropagation();
               toggleCollapse(task.id);
@@ -590,7 +607,7 @@ function TaskRow(props: RowProps): JSX.Element {
           disabled={!canEdit}
           derived={false}
           diagnostic={rowDiag}
-          placeholder="任务名称"
+          placeholder={tr('task.placeholderName')}
           onCommit={(v) => updateCell(task.id, 'name', v)}
           onEnter={onEnterNewRow}
           onFocusCell={() => selectTask(task.id)}
@@ -606,7 +623,7 @@ function TaskRow(props: RowProps): JSX.Element {
             derived={srcStart !== 'INPUT'}
             diagnostic={startDiag}
             placeholder="YYYY-MM-DD"
-            title={isParent ? parentTip : DERIVE_SOURCE_LABEL[srcStart]}
+            title={isParent ? parentTip : deriveLabel(srcStart)}
             onCommit={(v) => commitTime('start', v)}
             onEnter={onEnterNewRow}
             onFocusCell={() => selectTask(task.id)}
@@ -615,7 +632,7 @@ function TaskRow(props: RowProps): JSX.Element {
             size="small"
             className="pg-cal-btn"
             disabled={timeDisabled}
-            title="选择日期"
+            title={tr('task.pickDate')}
             onClick={openDatePopover('start')}
           >
             <CalendarMonthIcon fontSize="small" />
@@ -640,7 +657,7 @@ function TaskRow(props: RowProps): JSX.Element {
             derived={srcEnd !== 'INPUT'}
             diagnostic={endDiag}
             placeholder="YYYY-MM-DD"
-            title={isParent ? parentTip : DERIVE_SOURCE_LABEL[srcEnd]}
+            title={isParent ? parentTip : deriveLabel(srcEnd)}
             onCommit={(v) => commitTime('end', v)}
             onEnter={onEnterNewRow}
             onFocusCell={() => selectTask(task.id)}
@@ -649,7 +666,7 @@ function TaskRow(props: RowProps): JSX.Element {
             size="small"
             className="pg-cal-btn"
             disabled={timeDisabled}
-            title="选择日期"
+            title={tr('task.pickDate')}
             onClick={openDatePopover('end')}
           >
             <CalendarMonthIcon fontSize="small" />
@@ -673,7 +690,7 @@ function TaskRow(props: RowProps): JSX.Element {
           derived={srcDuration !== 'INPUT'}
           diagnostic={durationDiag}
           placeholder="5d / 2w / 1m"
-          title={isParent ? parentTip : DERIVE_SOURCE_LABEL[srcDuration]}
+          title={isParent ? parentTip : deriveLabel(srcDuration)}
           onCommit={(v) => updateCell(task.id, 'duration', v)}
           onEnter={onEnterNewRow}
           onFocusCell={() => selectTask(task.id)}
@@ -688,7 +705,7 @@ function TaskRow(props: RowProps): JSX.Element {
           derived={false}
           diagnostic={depsDiag}
           placeholder="2FS,3FF+1w"
-          title="填前置任务行号：3 / 2FS / 3FF+1w / 7ss-3d，多条用逗号分隔"
+          title={tr('task.depsHint')}
           preserveDraft={depsDiag?.code === ErrCode.ERR_DEP_PARSE || depsDiag?.code === ErrCode.ERR_DEP_TARGET_MISSING}
           onCommit={(v) => updateCell(task.id, 'deps', v)}
           onEnter={onEnterNewRow}
@@ -702,7 +719,7 @@ function TaskRow(props: RowProps): JSX.Element {
           value={task.owner ?? []}
           disabled={!canEdit}
           candidates={candidates}
-          label="负责人"
+          label={tr('col.owner')}
           onEditingChange={setOwnerEditing}
           onCommit={(names) => updatePeople(task.id, 'owner', names)}
         />
@@ -714,7 +731,7 @@ function TaskRow(props: RowProps): JSX.Element {
           value={task.consultant ?? []}
           disabled={!canEdit}
           candidates={candidates}
-          label="顾问人"
+          label={tr('col.consultant')}
           onEditingChange={setConsultantEditing}
           onCommit={(names) => updatePeople(task.id, 'consultant', names)}
         />
@@ -727,7 +744,7 @@ function TaskRow(props: RowProps): JSX.Element {
 
       {/* 行操作 */}
       <div className="pg-cell justify-end gap-0">
-        <Tooltip title={canAdd ? '在下方插入同级行（Enter）' : '请先清除筛选，再插入新行'}>
+        <Tooltip title={canAdd ? tr('task.insertBelow') : tr('task.clearFilterFirst')}>
           <span>
             <IconButton
               size="small"
@@ -735,41 +752,41 @@ function TaskRow(props: RowProps): JSX.Element {
               onClick={() => addRow(task.id)}
               style={{ padding: 2 }}
               /* 显式 aria-label：Tooltip 的文案只挂在外层 span 上，按钮本身读不到 */
-              aria-label={canAdd ? '在下方插入同级行（Enter）' : '请先清除筛选，再插入新行'}
+              aria-label={canAdd ? tr('task.insertBelow') : tr('task.clearFilterFirst')}
             >
               <AddIcon fontSize="small" />
             </IconButton>
           </span>
         </Tooltip>
-        <Tooltip title="缩进为上一行的子任务">
+        <Tooltip title={tr('task.indent')}>
           <span>
             <IconButton size="small" disabled={!canEdit} onClick={() => indent(task.id)} style={{ padding: 2 }}>
               <FormatIndentIncreaseIcon fontSize="small" />
             </IconButton>
           </span>
         </Tooltip>
-        <Tooltip title="升级一层">
+        <Tooltip title={tr('task.outdent')}>
           <span>
             <IconButton size="small" disabled={!canEdit} onClick={() => outdent(task.id)} style={{ padding: 2 }}>
               <FormatIndentDecreaseIcon fontSize="small" />
             </IconButton>
           </span>
         </Tooltip>
-        <Tooltip title="上移">
+        <Tooltip title={tr('task.moveUp')}>
           <span>
             <IconButton size="small" disabled={!canEdit} onClick={() => moveRow(task.id, -1)} style={{ padding: 2 }}>
               <ArrowUpwardIcon fontSize="small" />
             </IconButton>
           </span>
         </Tooltip>
-        <Tooltip title="下移">
+        <Tooltip title={tr('task.moveDown')}>
           <span>
             <IconButton size="small" disabled={!canEdit} onClick={() => moveRow(task.id, 1)} style={{ padding: 2 }}>
               <ArrowDownwardIcon fontSize="small" />
             </IconButton>
           </span>
         </Tooltip>
-        <Tooltip title={isParent ? '删除该行及其所有子任务' : '删除该行'}>
+        <Tooltip title={isParent ? tr('task.deleteWithChildren') : tr('task.deleteRow')}>
           <span>
             <IconButton
               size="small"
@@ -796,6 +813,7 @@ export interface TaskTableProps {
 }
 
 export default function TaskTable({ scrollRef, onScroll }: TaskTableProps): JSX.Element {
+  const tr = useT();
   const plan = useStore((s) => s.plan);
   const sched = useStore((s) => s.sched);
   const diagnostics = useStore((s) => s.diagnostics);
@@ -964,12 +982,12 @@ export default function TaskTable({ scrollRef, onScroll }: TaskTableProps): JSX.
                 c.key === 'actions' ? 'justify-end' : ''
               }`}
             >
-              <span className="pg-th-label">{c.label}</span>
-              {isFilterable(c.key) && <ColumnFilterMenu columnKey={c.key} label={c.label} />}
+              <span className="pg-th-label">{tr(`col.${c.key}`)}</span>
+              {isFilterable(c.key) && <ColumnFilterMenu columnKey={c.key} label={tr(`col.${c.key}`)} />}
               {i < COLUMNS.length - 1 && (
                 <span
                   className={`pg-col-resizer ${dragIndex === i ? 'pg-col-resizer--active' : ''}`}
-                  title="拖动调整列宽；双击按内容自适应"
+                  title={tr('task.resizeHint')}
                   onMouseDown={(e) => startResize(e, i)}
                   onDoubleClick={() => autoFitColumn(i)}
                 />
@@ -1010,11 +1028,11 @@ export default function TaskTable({ scrollRef, onScroll }: TaskTableProps): JSX.
             <button
               type="button"
               disabled={!canEdit || filtering}
-              title={filtering ? '请先清除筛选，再插入新行' : undefined}
+              title={filtering ? tr('task.clearFilterFirst') : undefined}
               onClick={() => addRow()}
               className="text-[12px] text-blue-600 disabled:cursor-not-allowed disabled:text-slate-400"
             >
-              新增一行
+              {tr('task.addRow')}
             </button>
           </div>
           <div className="pg-cell" />
@@ -1034,7 +1052,7 @@ export default function TaskTable({ scrollRef, onScroll }: TaskTableProps): JSX.
       {/* 底部状态条：与右侧甘特图例条共用 .pg-panel-footer，两侧**恒定等高**。
           原先只在只读态渲染，导致只读态比甘特侧矮 2px → 滚到底时 scrollTop 同步被 clamp（K16）。 */}
       <div className="pg-panel-footer">
-        {canEdit ? '编辑模式：改完记得点工具栏「保存」' : '只读模式：点击工具栏「编辑」获取编辑权后方可修改'}
+        {canEdit ? tr('task.editModeFooter') : tr('task.readonlyModeFooter')}
       </div>
     </div>
   );

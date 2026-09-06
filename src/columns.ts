@@ -13,6 +13,7 @@ import type { CSSProperties } from 'react';
 import type { Task } from '../shared/types';
 import { formatPeople } from '../shared/people';
 import { todosProgressText } from '../shared/todo';
+import { t } from './i18n';
 
 /* ============================ 类型 ============================ */
 
@@ -326,7 +327,8 @@ export function autoFitWidth(index: number, input: AutoFitInput): number | null 
   if (col.key === 'actions') return null;
 
   // 纯文字宽度（表头 + 各行文本），用于判断"测量是否可用"
-  let textMax = measureTextWidth(col.label);
+  // 表头文案走 i18n（col.<key>）：EN 模式下表头更长，自适应要按当前语言测量
+  let textMax = measureTextWidth(t(`col.${col.key}`));
   // 行所需总宽（文字 + 该列的非文字装饰：缩进/折叠三角/日历按钮）
   let rowMax = 0;
 

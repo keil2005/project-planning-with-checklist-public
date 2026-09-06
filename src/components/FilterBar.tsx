@@ -21,26 +21,28 @@ import FilterListOffIcon from '@mui/icons-material/FilterListOff';
 import { useRowCounts, useStore } from '../store';
 import { COLUMNS } from '../columns';
 import { activeColumnKeys, describeColumnFilter, isFilterActive, type FilterState } from '../filter';
+import { t, useT } from '../i18n';
 
-/** 列名查表（chips 文案用） */
+/** 列名查表（chips 文案用；走 i18n 与表头一致） */
 function labelOf(key: string): string {
-  return COLUMNS.find((c) => c.key === key)?.label ?? key;
+  return t(`col.${key}`);
 }
 
 /** 筛选条件的自然语言摘要（甘特侧等高条与 tooltip 共用） */
 export function filterSummary(filter: FilterState, me: string | null): string {
   const parts: string[] = [];
-  if (filter.onlyMine) parts.push(`仅「${me ?? '未选择身份'}」相关的行`);
+  if (filter.onlyMine) parts.push(t('filter.summaryOnlyMine', { me: me ?? t('filter.summaryNoIdentity') }));
   for (const key of activeColumnKeys(filter, COLUMNS.map((c) => c.key))) {
     const f = filter.byColumn[key];
     if (f) parts.push(describeColumnFilter(key, f, labelOf(key)));
   }
-  return parts.length === 0 ? '未筛选' : parts.join('；');
+  return parts.length === 0 ? t('filter.noFilter') : parts.join(t('filter.sep'));
 }
 
 /* ============================ 左侧（可操作） ============================ */
 
 export function FilterBar(): JSX.Element {
+  const tr = useT();
   const filter = useStore((s) => s.filter);
   const me = useStore((s) => s.session.user);
   const setOnlyMine = useStore((s) => s.setOnlyMine);
@@ -55,11 +57,7 @@ export function FilterBar(): JSX.Element {
   return (
     <div className="pg-filter-bar">
       <Tooltip
-        title={
-          me
-            ? `只显示负责人或顾问人是「${me}」的行（含其父任务）`
-            : '请先在工具栏「选择身份」后再使用'
-        }
+        title={me ? tr('filter.onlyMineTip', { me }) : tr('filter.onlyMineTipNoId')}
       >
         <span>
           <Button
@@ -70,7 +68,7 @@ export function FilterBar(): JSX.Element {
             onClick={() => setOnlyMine(!filter.onlyMine)}
             className="pg-assign-btn"
           >
-            Assign to me
+            {tr('filter.assignToMe')}
           </Button>
         </span>
       </Tooltip>
@@ -79,7 +77,7 @@ export function FilterBar(): JSX.Element {
 
       <div className="pg-filter-chips" title={summary}>
         {keys.length === 0 ? (
-          <span className="pg-filter-idle">未筛选</span>
+          <span className="pg-filter-idle">{tr('filter.noFilter')}</span>
         ) : (
           keys.map((k) => {
             const f = filter.byColumn[k];
@@ -98,11 +96,9 @@ export function FilterBar(): JSX.Element {
         )}
       </div>
 
-      <span className="pg-filter-count">
-        显示 {shown} / 共 {total} 行
-      </span>
+      <span className="pg-filter-count">{tr('filter.showingRows', { shown, total })}</span>
 
-      <Tooltip title="清除全部筛选条件">
+      <Tooltip title={tr('filter.clearAllTip')}>
         <span>
           <Button
             size="small"
@@ -110,7 +106,7 @@ export function FilterBar(): JSX.Element {
             disabled={!active}
             onClick={clearAllFilters}
           >
-            清除全部
+            {tr('filter.clearAll')}
           </Button>
         </span>
       </Tooltip>
@@ -121,6 +117,7 @@ export function FilterBar(): JSX.Element {
 /* ============================ 右侧（只读等高条） ============================ */
 
 export function FilterStatusBar(): JSX.Element {
+  const tr = useT();
   const filter = useStore((s) => s.filter);
   const me = useStore((s) => s.session.user);
   const { shown, total } = useRowCounts();
@@ -129,11 +126,11 @@ export function FilterStatusBar(): JSX.Element {
   return (
     <div className="pg-filter-bar pg-filter-bar--readonly">
       <span className={`pg-filter-chips ${active ? 'pg-filter-chips--active' : ''}`} title={filterSummary(filter, me)}>
-        {active ? `筛选：${filterSummary(filter, me)}` : '未筛选'}
+        {active
+          ? `${tr('filter.activePrefix')}${filterSummary(filter, me)}`
+          : tr('filter.noFilter')}
       </span>
-      <span className="pg-filter-count">
-        显示 {shown} / 共 {total} 行
-      </span>
+      <span className="pg-filter-count">{tr('filter.showingRows', { shown, total })}</span>
     </div>
   );
 }

@@ -5,6 +5,8 @@
  *   IDLE            → 「编辑」可点
  *   我持有           → 「正在编辑（我）· 退出编辑」
  *   他人持有         → 「Bob 正在编辑」禁用 + Tooltip
+ *
+ * v1.2.0：全部文案走 i18n（t('toolbar.*')）；右下角新增 CN/EN 语言切换按钮。
  */
 
 import { useMemo, useRef, useState } from 'react';
@@ -30,7 +32,9 @@ import GroupsIcon from '@mui/icons-material/Groups';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import SaveIcon from '@mui/icons-material/Save';
 import TodayIcon from '@mui/icons-material/Today';
+import TranslateIcon from '@mui/icons-material/Translate';
 import { useCanEdit, useHasError, useStore } from '../store';
+import { useT, useLangStore, langLabel } from '../i18n';
 import type { ZoomLevel } from '../../shared/types';
 
 export default function Toolbar(): JSX.Element {
@@ -60,13 +64,18 @@ export default function Toolbar(): JSX.Element {
 
   const [exportAnchor, setExportAnchor] = useState<HTMLElement | null>(null);
 
+  const tr = useT();
+  const lang = useLangStore((s) => s.lang);
+  const toggleLang = useLangStore((s) => s.toggle);
+
   const lockLabel = useMemo(() => {
-    if (canEdit) return '正在编辑（我）';
+    if (canEdit) return tr('toolbar.editingMe');
     if (lock?.status === 'EDITING' && lock.holder && lock.holder !== session.user) {
-      return `${lock.holder} 正在编辑`;
+      return tr('toolbar.editingBy', { holder: lock.holder });
     }
-    return '编辑';
-  }, [canEdit, lock, session.user]);
+    return tr('toolbar.edit');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canEdit, lock, session.user, lang]);
 
   const otherHolding = lock?.status === 'EDITING' && !!lock.holder && lock.holder !== session.user;
   const saveDisabled = !canEdit || !dirty || hasError || busy;
@@ -75,34 +84,34 @@ export default function Toolbar(): JSX.Element {
     <div className="flex flex-wrap items-center gap-2 border-b border-slate-300 bg-white px-3 py-[6px]">
       {/* 计划名 + 版本 */}
       <div className="flex min-w-0 items-center gap-2">
-        <span className="truncate text-[14px] font-semibold">{plan ? plan.name : '（未打开计划）'}</span>
+        <span className="truncate text-[14px] font-semibold">{plan ? plan.name : tr('toolbar.noPlan')}</span>
         {plan && <Chip size="small" variant="outlined" label={`v${plan.version}`} />}
-        {dirty && <Chip size="small" color="warning" label="未保存" />}
+        {dirty && <Chip size="small" color="warning" label={tr('toolbar.dirty')} />}
       </div>
 
       <Divider orientation="vertical" flexItem />
 
       {/* 身份 */}
-      <Tooltip title={authed ? '当前已登录，点击切换账号 / 工作区' : '点击登录'}>
+      <Tooltip title={authed ? tr('toolbar.userTooltipAuthed') : tr('toolbar.userTooltipGuest')}>
         <Button startIcon={<PersonIcon />} variant="text" onClick={() => openDialog('user')}>
-          {session.user ?? '未登录'}
+          {session.user ?? tr('toolbar.notLoggedIn')}
         </Button>
       </Tooltip>
 
       {/* 团队花名册（已登录才显示） */}
       {authed && (
-        <Tooltip title="管理团队成员与邀请链接">
+        <Tooltip title={tr('toolbar.rosterTooltip')}>
           <Button startIcon={<GroupsIcon />} variant="text" onClick={() => openDialog('roster')}>
-            团队
+            {tr('toolbar.team')}
           </Button>
         </Tooltip>
       )}
 
       {/* 注销 */}
       {authed && (
-        <Tooltip title="注销并清 cookie">
+        <Tooltip title={tr('toolbar.logoutTooltip')}>
           <Button startIcon={<LogoutIcon />} variant="text" onClick={() => void logout()}>
-            注销
+            {tr('toolbar.logout')}
           </Button>
         </Tooltip>
       )}
@@ -110,7 +119,13 @@ export default function Toolbar(): JSX.Element {
       <Divider orientation="vertical" flexItem />
 
       {/* 编辑锁 */}
-      <Tooltip title={otherHolding ? `编辑权由 ${lock?.holder} 持有，30 秒无心跳后自动释放` : '同一时刻仅一人可编辑'}>
+      <Tooltip
+        title={
+          otherHolding
+            ? tr('toolbar.lockHeldBy', { holder: lock?.holder ?? '' })
+            : tr('toolbar.lockHint')
+        }
+      >
         <span>
           {canEdit ? (
             <Button
@@ -119,7 +134,7 @@ export default function Toolbar(): JSX.Element {
               variant="contained"
               onClick={() => void exitEditMode()}
             >
-              {lockLabel} · 退出编辑
+              {tr('toolbar.exitEdit', { label: lockLabel })}
             </Button>
           ) : (
             <Button
@@ -138,26 +153,26 @@ export default function Toolbar(): JSX.Element {
       <Tooltip
         title={
           hasError
-            ? '存在 error 级诊断，请先修复后再保存'
+            ? tr('toolbar.saveTooltipError')
             : !canEdit
-              ? '请先进入编辑模式'
+              ? tr('toolbar.saveTooltipNoEdit')
               : !dirty
-                ? '没有需要保存的修改'
-                : '保存并生成新版本（变更纪要必填）'
+                ? tr('toolbar.saveTooltipClean')
+                : tr('toolbar.saveTooltipOk')
         }
       >
         <span>
           <Button startIcon={<SaveIcon />} variant="contained" disabled={saveDisabled} onClick={() => openDialog('save')}>
-            保存
+            {tr('toolbar.save')}
           </Button>
         </span>
       </Tooltip>
 
       <Button startIcon={<FolderOpenIcon />} variant="text" disabled={!session.user} onClick={() => openDialog('planPicker')}>
-        打开
+        {tr('toolbar.open')}
       </Button>
       <Button startIcon={<FileOpenIcon />} variant="text" disabled={!session.user} onClick={() => fileInputRef.current?.click()}>
-        导入
+        {tr('toolbar.import')}
       </Button>
       <input
         ref={fileInputRef}
@@ -171,10 +186,10 @@ export default function Toolbar(): JSX.Element {
         }}
       />
       <Button startIcon={<AddIcon />} variant="text" disabled={!session.user} onClick={() => openDialog('planPicker')}>
-        新建
+        {tr('toolbar.new')}
       </Button>
       <Button startIcon={<RefreshIcon />} variant="text" disabled={!plan} onClick={() => void refreshPlan()}>
-        刷新
+        {tr('toolbar.refresh')}
       </Button>
 
       <Divider orientation="vertical" flexItem />
@@ -186,7 +201,7 @@ export default function Toolbar(): JSX.Element {
         disabled={!plan}
         onClick={(e) => setExportAnchor(e.currentTarget)}
       >
-        导出
+        {tr('toolbar.export')}
       </Button>
       <Menu anchorEl={exportAnchor} open={exportAnchor !== null} onClose={() => setExportAnchor(null)}>
         <MenuItem
@@ -203,7 +218,7 @@ export default function Toolbar(): JSX.Element {
             exportPlan('csv');
           }}
         >
-          CSV（Excel 可直接打开）
+          {tr('toolbar.exportCsvItem')}
         </MenuItem>
         <MenuItem
           onClick={() => {
@@ -211,12 +226,12 @@ export default function Toolbar(): JSX.Element {
             openDialog('exportTodos');
           }}
         >
-          Markdown 清单…
+          {tr('toolbar.exportMd')}
         </MenuItem>
       </Menu>
 
       <Button startIcon={<HistoryIcon />} variant="text" disabled={!plan} onClick={() => openDialog('history')}>
-        变更记录
+        {tr('toolbar.history')}
       </Button>
 
       <Button
@@ -225,10 +240,17 @@ export default function Toolbar(): JSX.Element {
         disabled={!session.user}
         onClick={() => openDialog('calendar')}
       >
-        日历设置
+        {tr('toolbar.calendar')}
       </Button>
 
       <div className="flex-1" />
+
+      {/* 语言切换 */}
+      <Tooltip title={tr('toolbar.langTooltip')}>
+        <Button startIcon={<TranslateIcon />} variant="text" onClick={toggleLang}>
+          {langLabel(lang)}
+        </Button>
+      </Tooltip>
 
       {/* 缩放 + 今天 */}
       <ToggleButtonGroup
@@ -237,12 +259,12 @@ export default function Toolbar(): JSX.Element {
         value={zoom}
         onChange={(_e, v: ZoomLevel | null) => v && setZoom(v)}
       >
-        <ToggleButton value="day">日</ToggleButton>
-        <ToggleButton value="week">周</ToggleButton>
-        <ToggleButton value="month">月</ToggleButton>
+        <ToggleButton value="day">{tr('toolbar.zoomDay')}</ToggleButton>
+        <ToggleButton value="week">{tr('toolbar.zoomWeek')}</ToggleButton>
+        <ToggleButton value="month">{tr('toolbar.zoomMonth')}</ToggleButton>
       </ToggleButtonGroup>
       <Button startIcon={<TodayIcon />} variant="text" disabled={!plan} onClick={jumpToday}>
-        今天
+        {tr('toolbar.today')}
       </Button>
     </div>
   );

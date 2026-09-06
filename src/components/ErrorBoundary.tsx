@@ -7,6 +7,7 @@
  */
 
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { t } from '../i18n';
 
 interface Props {
   children: ReactNode;
@@ -56,7 +57,7 @@ export default class ErrorBoundary extends Component<Props, State> {
         }}
       >
         <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 8 }}>
-          界面出现渲染错误（数据未丢失）
+          {t('errorBoundary.title')}
         </div>
         <div style={{ marginBottom: 8, opacity: 0.85 }}>{this.state.message}</div>
         <button
@@ -71,10 +72,10 @@ export default class ErrorBoundary extends Component<Props, State> {
             cursor: 'pointer',
           }}
         >
-          重试恢复界面
+          {t('errorBoundary.retry')}
         </button>
         <div style={{ marginTop: 10, opacity: 0.6, fontSize: 12 }}>
-          提示：计划数据仍在内存中，点「重试」即可恢复编辑；若反复出现，请把上方错误信息反馈给开发。
+          {t('errorBoundary.desc')}
         </div>
       </div>
     );
