@@ -37,7 +37,7 @@ assignees: ''
 
 ## Out of Scope?
 
-<!-- 是否属于 [IMPL_ROADMAP §4 OUT-OF-SCOPE](https://github.com/keil2005/project-planning-with-checklist/blob/main/docs/IMPL_ROADMAP.md)？比如：实时协同 / 多租户 SaaS / Jira 同步 -->
+<!-- 是否属于 OUT-OF-SCOPE 范围？比如：实时协同 / 多租户 SaaS / Jira 同步 -->
 
 - [ ] I'm aware this might be out of scope
 - [ ] This fits the v1.x roadmap

@@ -9,10 +9,10 @@
     "name": "Keil Zheng",
     "email": "keil2005@126.com"
   },
-  "homepage": "https://github.com/keil2005/project-planning-with-checklist",
+  "homepage": "https://github.com/keil2005/project-planning-with-checklist-public",
   "repository": {
     "type": "git",
-    "url": "https://github.com/keil2005/project-planning-with-checklist.git"
+    "url": "https://github.com/keil2005/project-planning-with-checklist-public.git"
   },
   "scripts": {
     "dev": "concurrently -n web,api -c cyan,magenta \"vite\" \"tsx watch server/index.ts\"",

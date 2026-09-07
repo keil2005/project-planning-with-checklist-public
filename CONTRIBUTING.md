@@ -30,7 +30,7 @@ CI 全绿 + maintainer review
 
 ## 2. 提 Issue
 
-**先搜**：在 https://github.com/keil2005/project-planning-with-checklist/issues 搜一下，避免重复。
+**先搜**：在 https://github.com/keil2005/project-planning-with-checklist-public/issues 搜一下，避免重复。
 
 **Bug 报告**：用 `.github/ISSUE_TEMPLATE/bug.md` 模板，必须含：
 - 复现步骤（一步一步来）

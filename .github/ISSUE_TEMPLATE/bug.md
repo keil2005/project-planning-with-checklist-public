@@ -46,6 +46,6 @@ assignees: ''
 
 ## Checklist
 
-- [ ] 我搜过 [现有 issue](https://github.com/keil2005/project-planning-with-checklist/issues?q=is%3Aissue)，确认没重复
+- [ ] 我搜过 [现有 issue](https://github.com/keil2005/project-planning-with-checklist-public/issues?q=is%3Aissue)，确认没重复
 - [ ] 我用的是最新版
 - [ ] 我已隐藏截图/日志中的真实业务数据

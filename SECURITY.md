@@ -20,7 +20,7 @@
 可用通道（按推荐顺序）：
 
 1. **邮件**（首选）— 上面邮箱
-2. **GitHub Security Advisories**：[仓库 Security tab → "New draft security advisory"](https://github.com/keil2005/project-planning-with-checklist/security/advisories/new)（私有）
+2. **GitHub Security Advisories**：[仓库 Security tab → "New draft security advisory"](https://github.com/keil2005/project-planning-with-checklist-public/security/advisories/new)（私有）
 3. **加密** — 接收 PGP 公钥请求后我们 PGP 回复
 
 ### 报告内容
