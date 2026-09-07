@@ -4,7 +4,7 @@
  * 渲染要点（系统设计 §6）：
  *   - 行高严格取 ROW_H，与左侧表格共用同一逻辑滚动位置（K16）；
  *   - x(date) = diffDays(rangeStart, date) * dayWidth，dayWidth 随缩放档位（日 24 / 周 8 / 月 3）；
- *   - 任务条取半开区间 [start, end)：x = x(start)，width = x(end) - x(start)，天然无缝衔接；
+ *   - 任务条取闭区间 [start, end]：x = x(start)，width = x(end+1) - x(start)，end 那条边画在 end 那天右边缘（K3 端点式 inclusive，2026-09-07）；
  *   - 父任务画两端带脚的汇总条；
  *   - 依赖箭头为正交折线 + marker-end 三角 + 中点 'FF+1w' 标注；与依赖冲突的边画红色虚线；
  *   - 「今天」竖线；项目起止范围左右各留 7 天 padding；
@@ -524,7 +524,9 @@ export default function GanttChart({ scrollRef, onScroll }: GanttChartProps): JS
               const c = sched.computed[t.id];
               if (!c) return null;
               const x = xOf(c.start);
-              const w = Math.max(2, xOf(c.end) - x);
+              // K3 端点式（2026-09-07）：end 本身已是最后工作日（inclusive），
+              // 视觉上条形需占满 end 那天 → 用 addDays(end, 1) 算出下一格 x
+              const w = Math.max(2, xOf(addDays(c.end, 1)) - x);
               const cy = i * ROW_H + ROW_H / 2;
               const hasErr = errorTasks.has(t.id);
               // 人员可多人 → 顿号拼接；顾问人按裁定不上条（只作备注信息）

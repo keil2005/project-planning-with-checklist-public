@@ -2,10 +2,14 @@
  * shared/datetime.ts —— 日期与时长纯函数层（前后端共用，零副作用）。
  *
  * ★ 全局最重要的约定（系统设计 §2.1 / K3）：端点式（ENDPOINT）时间语义
- *    end = addDuration(start, duration)，甘特条为左闭右开 [start, end)。
+ *    end = addDuration(start, duration) = 最后工作日（inclusive，"下班时间"）。
+ *    区间为闭 [start, end]（含结束日），甘特条占满 end 那天。
  *    'd' → +N 天；'w' → +7N 天；'m' → dayjs add(N,'month')（自带月末夹取）。
  *
  * 所有业务日期都是 'YYYY-MM-DD' 字符串，严格解析（dayjs strict 模式）。
+ *
+ * v1.2.1：end 由「半开右边界 last+1d」改为「最后工作日本身」（含日），
+ * 贴合用户语义（"结束日期 = 那天下班时间"）。mpp import / 甘特条 / 测试同步对齐。
  */
 
 import dayjs, { type Dayjs } from 'dayjs';
@@ -130,12 +134,11 @@ export function addDuration(
 ): ISODate {
   const wd = Math.abs(dur.value) * durationFactor(dur.unit);
   if (sign > 0) {
-    const last = addWorkingDays(date, wd, cal);
-    return addDays(last, 1);
+    // 正向：date 是第 1 个工作日，终点 = 第 wd 个（inclusive，end = "下班时间"）
+    return addWorkingDays(date, wd, cal);
   }
-  // 逆向：退出半开排他边界后倒推，不 +1
-  const base = addDays(date, -1);
-  return addWorkingDays(base, -wd, cal);
+  // 逆向：end (inclusive) 倒数第 wd 个 = 起点
+  return addWorkingDays(date, -wd, cal);
 }
 
 export function subDuration(date: ISODate, dur: Duration, cal: WorkCalendar = NATURAL_CALENDAR): ISODate {
@@ -207,7 +210,8 @@ export function addWorkingDays(start: ISODate, n: number, cal: WorkCalendar = NA
 }
 
 /**
- * 半开区间 [a, b) 内的工作日数（a 计入，b 不计入）。b < a 时返回负数。
+ * 闭区间 [a, b] 内的工作日数（a、b 均计入）。b < a 时返回负数。
+ * 与 K3 端点式（end = 最后工作日本身 inclusive）对齐：start/end 都算 1 个工作日的两端。
  */
 export function countWorkingDays(a: ISODate, b: ISODate, cal: WorkCalendar = NATURAL_CALENDAR): number {
   const sa = parseISODate(a);
@@ -218,7 +222,7 @@ export function countWorkingDays(a: ISODate, b: ISODate, cal: WorkCalendar = NAT
   const hi = forward ? sb : sa;
   let cur = lo;
   let cnt = 0;
-  while (cur.isBefore(hi)) {
+  while (!cur.isAfter(hi)) {
     if (cal.isWorking(formatISODate(cur))) cnt += 1;
     cur = cur.add(1, 'day');
   }

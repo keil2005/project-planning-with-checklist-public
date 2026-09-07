@@ -3,13 +3,31 @@
 所有 Project Planning with Checklist 的显著变更都记录在这个文件。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
-> **下一次发布**：[Unreleased] — Docker 一键部署 / i18n / 多项导出（详见 [IMPL_ROADMAP](./docs/IMPL_ROADMAP.md)）
+> **下一次发布**：[Unreleased] — Docker 一键部署 / 多项导出（详见 [IMPL_ROADMAP](./docs/IMPL_ROADMAP.md)）
+
+## [1.2.1] — 2026-09-07
+
+### Fixed
+- **ENDPOINT（端点式）日期语义**：`addDuration(start, duration)` 现在返回最后工作日本身（inclusive，「下班时间」），不再多算 1 天
+  - 例：start=`2026-08-26` + `3d` → end=`2026-08-28`（旧版错为 `2026-08-29`）
+  - 影响：`shared/datetime.ts` `addDuration` / `countWorkingDays`，`shared/scheduler.ts` 排程 #4 / #11 分支，`server/mppImport.ts` 导入结束日，`server/exporters.ts` MSPDI 唯一转换点
+- **甘特条对齐语义**：条形宽度按闭区间 `[start, end]` 渲染，end 那条边画在 end 那天右边缘（之前半开会少 1 格）
+- **i18n 同步**：`gantt.range` 文案（CN / EN）已说明 K3 端点式
+
+### Tests
+- 4 个共享测试文件（`calendar` / `extra` / `scheduler` / `mpp-import`）+ 1 个服务端测试（`exporters`）的 end 期望值改为 inclusive
+- 全部 383 个测试通过；tsc 错误数与 v1.2.0 baseline 一致（无新增）
+
+### Compatibility
+- 数据 schema 不变；旧 plan.json 文件直接兼容
+- `calendar.skipHolidays` 字段（v1.2.0 引入）保留，MPPDI 导入默认 `false`
+
+---
 
 ## [Unreleased] — Phase B/C 候选
 
 ### Planned
 - Docker Compose 一键部署（基于 `server-build/server.cjs`）
-- i18n 双语（zh-CN / en-US）
 - OpenAPI 文档自动生成
 
 ---

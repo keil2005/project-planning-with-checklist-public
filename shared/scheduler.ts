@@ -689,9 +689,9 @@ function resolveLeaf(task: Task, ctx: LeafCtx, diagnostics: Diagnostic[]): TaskC
   } else if (S) {
     src.start = 'INPUT';
     if (ce) {
-      // #4
+      // #4（K3 端点式：S 本身已是 1 个工作日，无需 +1；end = max(S, ce)）
       start = S;
-      end = maxDate([ce, addDuration(S, ONE_DAY, 1, ctx.calendar)]) as ISODate;
+      end = maxDate([ce, S]) as ISODate;
       derivedFrom = 'MIXED';
       src.end = 'DEP';
       src.duration = 'MIXED';
@@ -754,9 +754,9 @@ function resolveLeaf(task: Task, ctx: LeafCtx, diagnostics: Diagnostic[]): TaskC
       );
     }
   } else if (cs && ce) {
-    // #11
+    // #11（K3 端点式：cs 本身已是 1 个工作日，无需 +1；end = max(cs, ce)）
     start = cs;
-    end = maxDate([ce, addDuration(cs, ONE_DAY, 1, ctx.calendar)]) as ISODate;
+    end = maxDate([ce, cs]) as ISODate;
     derivedFrom = 'DEP';
     src.start = 'DEP';
     src.end = 'DEP';

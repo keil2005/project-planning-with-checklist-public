@@ -107,13 +107,13 @@ describe('d·exporters · MSPDI XML（注入 WEEKEND_ONLY）', () => {
     expect(types).toContain('<Type>3</Type>');
   });
 
-  it('LinkLag 工作日口径（FF+1w 锚点09-02→33600，SF-3d 锚点08-26→-24000）', () => {
-    // 锚点 pred.end = 2026-09-02（周三，WEEKEND_ONLY 调度得出）；+1w = 5 工作日跨 7 自然日 → 7×480×10
-    expect(lagToTenthMinutes({ value: 1, unit: 'w' }, 1, '2026-09-02', WEEKEND_ONLY)).toBe(33600);
-    // 锚点 pred.start = 2026-08-26（周三）；-3d = 倒数 3 个工作日跨 5 自然日 → −5×480×10
-    expect(lagToTenthMinutes({ value: 3, unit: 'd' }, -1, '2026-08-26', WEEKEND_ONLY)).toBe(-24000);
-    expect(xml).toContain('<LinkLag>33600</LinkLag>');
-    expect(xml).toContain('<LinkLag>-24000</LinkLag>');
+  it('LinkLag 工作日口径（FF+1w 锚点09-02→28800，SF-3d 锚点08-26→-9600，2026-09-07 端点式）', () => {
+    // 锚点 pred.end = 2026-09-02（周三，WEEKEND_ONLY 调度得出）；+1w = 5 工作日跨 6 自然日 → 6×480×10
+    expect(lagToTenthMinutes({ value: 1, unit: 'w' }, 1, '2026-09-02', WEEKEND_ONLY)).toBe(28800);
+    // 锚点 pred.start = 2026-08-26（周三）；-3d = 倒数 3 个工作日跨 2 自然日 → −2×480×10
+    expect(lagToTenthMinutes({ value: 3, unit: 'd' }, -1, '2026-08-26', WEEKEND_ONLY)).toBe(-9600);
+    expect(xml).toContain('<LinkLag>28800</LinkLag>');
+    expect(xml).toContain('<LinkLag>-9600</LinkLag>');
   });
 
   it('Duration 以工作日计（5 工作日 → PT40H0M0S）', () => {

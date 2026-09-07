@@ -81,9 +81,9 @@ describe('sanitizeDeps · 字符串型 lag 归一化', () => {
 /* --------------------- schedule 端到端：字符串 lag == 对象 lag --------------------- */
 
 describe('schedule · 字符串 lag 与对象 lag 行为一致', () => {
-  it("FF+1w 字符串 lag → successor.end = predecessor.end + 7d", () => {
+  it("FF+1w 字符串 lag → successor.end = predecessor.end + 1w（K3 端点式含闭，2026-09-07）", () => {
     const plan = makePlan([
-      task('T-1', '前驱', { input: { start: '2026-08-26', end: '2026-09-02', duration: '1w' } }),
+      task('T-1', '前驱', { input: { start: '2026-08-26', end: '2026-09-01', duration: '1w' } }),
       task('T-2', '后继', {
         input: { start: null, end: null, duration: '1d' },
         deps: [{ predecessorId: 'T-1', type: 'FF', lag: '1w', lagSign: 1, raw: '1FF+1w' } as unknown as Dependency],
@@ -92,22 +92,22 @@ describe('schedule · 字符串 lag 与对象 lag 行为一致', () => {
     const res = schedule(plan, { calendar: WEEKEND_ONLY });
     const pred = res.computed['T-1'];
     const succ = res.computed['T-2'];
-    expect(pred.end).toBe('2026-09-02');
-    expect(succ.end).toBe(addDuration('2026-09-02', { value: 1, unit: 'w' }, 1, WEEKEND_ONLY));
-    expect(succ.end).toBe('2026-09-09');
+    expect(pred.end).toBe('2026-09-01');
+    expect(succ.end).toBe(addDuration('2026-09-01', { value: 1, unit: 'w' }, 1, WEEKEND_ONLY));
+    expect(succ.end).toBe('2026-09-07');
     expect(res.diagnostics.filter((d) => d.level === 'error')).toHaveLength(0);
   });
 
   it('同结构用对象型 lag 得到一致结果（回归对照）', () => {
     const plan = makePlan([
-      task('T-1', '前驱', { input: { start: '2026-08-26', end: '2026-09-02', duration: '1w' } }),
+      task('T-1', '前驱', { input: { start: '2026-08-26', end: '2026-09-01', duration: '1w' } }),
       task('T-2', '后继', {
         input: { start: null, end: null, duration: '1d' },
         deps: [{ predecessorId: 'T-1', type: 'FF', lag: { value: 1, unit: 'w' }, lagSign: 1, raw: '1FF+1w' }],
       }),
     ]);
     const res = schedule(plan, { calendar: WEEKEND_ONLY });
-    expect(res.computed['T-2'].end).toBe('2026-09-09');
+    expect(res.computed['T-2'].end).toBe('2026-09-07');
   });
 });
 

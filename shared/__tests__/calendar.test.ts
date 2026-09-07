@@ -64,35 +64,35 @@ function wdOf(d: Duration): number {
 }
 
 describe('E1~E10 工作日口径自检（WEEKEND_ONLY，2026-08-26=周三）', () => {
-  it('E1 addDuration 5d 正向 → 09-02', () => {
-    expect(addDuration('2026-08-26', dur(5, 'd'), 1, WEEKEND_ONLY)).toBe('2026-09-02');
+  it('E1 addDuration 5d 正向 → 09-01', () => {
+    expect(addDuration('2026-08-26', dur(5, 'd'), 1, WEEKEND_ONLY)).toBe('2026-09-01');
   });
   it('E2 subDuration 5d 逆向（往返闭合）→ 08-26', () => {
-    expect(subDuration('2026-09-02', dur(5, 'd'), WEEKEND_ONLY)).toBe('2026-08-26');
+    expect(subDuration('2026-09-01', dur(5, 'd'), WEEKEND_ONLY)).toBe('2026-08-26');
   });
-  it('E3 addDuration 1m 正向 → 09-23', () => {
-    expect(addDuration('2026-08-26', dur(1, 'm'), 1, WEEKEND_ONLY)).toBe('2026-09-23');
+  it('E3 addDuration 1m 正向 → 09-22', () => {
+    expect(addDuration('2026-08-26', dur(1, 'm'), 1, WEEKEND_ONLY)).toBe('2026-09-22');
   });
   it('E4 subDuration 1m 逆向（往返闭合）→ 08-26', () => {
-    expect(subDuration('2026-09-23', dur(1, 'm'), WEEKEND_ONLY)).toBe('2026-08-26');
+    expect(subDuration('2026-09-22', dur(1, 'm'), WEEKEND_ONLY)).toBe('2026-08-26');
   });
   it('E5 subDuration 1d 跨周末逆向 → 08-28', () => {
-    expect(subDuration('2026-08-31', dur(1, 'd'), WEEKEND_ONLY)).toBe('2026-08-28');
+    expect(subDuration('2026-08-30', dur(1, 'd'), WEEKEND_ONLY)).toBe('2026-08-28');
   });
-  it('E6 lagToDays 3d 逆向 → -5', () => {
-    expect(lagToDays(dur(3, 'd'), -1, '2026-08-26', WEEKEND_ONLY)).toBe(-5);
+  it('E6 lagToDays 3d 逆向 → -2', () => {
+    expect(lagToDays(dur(3, 'd'), -1, '2026-08-26', WEEKEND_ONLY)).toBe(-2);
   });
-  it('E7 lagToDays 1w 正向 → +7', () => {
-    expect(lagToDays(dur(1, 'w'), 1, '2026-09-02', WEEKEND_ONLY)).toBe(7);
+  it('E7 lagToDays 1w 正向 → +6', () => {
+    expect(lagToDays(dur(1, 'w'), 1, '2026-09-02', WEEKEND_ONLY)).toBe(6);
   });
-  it('E8 addDuration 1d 周五起 → end 落周六（半开排他）', () => {
-    expect(addDuration('2026-08-28', dur(1, 'd'), 1, WEEKEND_ONLY)).toBe('2026-08-29');
+  it('E8 addDuration 1d 周五起 → end 落周五（含内结束）', () => {
+    expect(addDuration('2026-08-28', dur(1, 'd'), 1, WEEKEND_ONLY)).toBe('2026-08-28');
   });
-  it('E9 addDuration 5d 周一起 → 09-05', () => {
-    expect(addDuration('2026-08-31', dur(5, 'd'), 1, WEEKEND_ONLY)).toBe('2026-09-05');
+  it('E9 addDuration 5d 周一起 → 09-04', () => {
+    expect(addDuration('2026-08-31', dur(5, 'd'), 1, WEEKEND_ONLY)).toBe('2026-09-04');
   });
-  it('E10 countWorkingDays 08-26..08-31（半开）→ 3', () => {
-    expect(countWorkingDays('2026-08-26', '2026-08-31', WEEKEND_ONLY)).toBe(3);
+  it('E10 countWorkingDays 08-26..08-31（闭区间）→ 4', () => {
+    expect(countWorkingDays('2026-08-26', '2026-08-31', WEEKEND_ONLY)).toBe(4);
   });
 });
 
@@ -116,17 +116,17 @@ describe('addWorkingDays', () => {
 });
 
 describe('countWorkingDays', () => {
-  it('含周末：08-26..08-31 → 3', () => {
-    expect(countWorkingDays('2026-08-26', '2026-08-31', WEEKEND_ONLY)).toBe(3);
+  it('含周末：08-26..08-31（含闭）→ 4', () => {
+    expect(countWorkingDays('2026-08-26', '2026-08-31', WEEKEND_ONLY)).toBe(4);
   });
-  it('含节假日（CAL_2026）：10-01..10-09 → 仅 10-08 计 1', () => {
-    expect(countWorkingDays('2026-10-01', '2026-10-09', CAL_2026)).toBe(1);
+  it('含节假日（CAL_2026）：10-01..10-09（含闭）→ 10-08+10-09=2', () => {
+    expect(countWorkingDays('2026-10-01', '2026-10-09', CAL_2026)).toBe(2);
   });
-  it('补班周六计入（CAL_2026）：10-09..10-12 → 09(周五)+10(补班周六)=2', () => {
-    expect(countWorkingDays('2026-10-09', '2026-10-12', CAL_2026)).toBe(2);
+  it('补班周六计入（CAL_2026）：10-09..10-12（含闭）→ 09+10(补班)+12=3', () => {
+    expect(countWorkingDays('2026-10-09', '2026-10-12', CAL_2026)).toBe(3);
   });
   it('反向区间返回负数', () => {
-    expect(countWorkingDays('2026-08-31', '2026-08-26', WEEKEND_ONLY)).toBe(-3);
+    expect(countWorkingDays('2026-08-31', '2026-08-26', WEEKEND_ONLY)).toBe(-4);
   });
 });
 
@@ -204,11 +204,11 @@ describe('未覆盖年份降级（仅周末规则）', () => {
 });
 
 describe('非工作日起点归一化（期望行为，勿修正）', () => {
-  it("addDuration('2026-08-29'周六, 1d) → '2026-09-01'", () => {
-    expect(addDuration('2026-08-29', dur(1, 'd'), 1, WEEKEND_ONLY)).toBe('2026-09-01');
+  it("addDuration('2026-08-29'周六, 1d) → '2026-08-31'（归一到周一，1 个工作日）", () => {
+    expect(addDuration('2026-08-29', dur(1, 'd'), 1, WEEKEND_ONLY)).toBe('2026-08-31');
   });
-  it("subDuration('2026-09-01', 1d) 归一到周一 → '2026-08-31'", () => {
-    expect(subDuration('2026-09-01', dur(1, 'd'), WEEKEND_ONLY)).toBe('2026-08-31');
+  it("subDuration('2026-09-01', 1d) 倒数到周一 → '2026-09-01'（1 个工作日，end 即 start）", () => {
+    expect(subDuration('2026-09-01', dur(1, 'd'), WEEKEND_ONLY)).toBe('2026-09-01');
   });
 });
 
@@ -234,12 +234,12 @@ describe('rollupParent 父子工期口径（注入 WEEKEND_ONLY）', () => {
     return { tasks: [p, c1] } as Plan;
   }
 
-  it('父 rollup 区间 08-26→09-23 经日历归约应为 {1,m}（非 {28,d}）', () => {
+  it('父 rollup 区间 08-26→09-22 经日历归约应为 {1,m}（非 {28,d}）', () => {
     const res = schedule(makePlan(), { calendar: WEEKEND_ONLY });
     const parent = res.computed['P'];
     expect(parent.isParent).toBe(true);
     expect(parent.start).toBe('2026-08-26');
-    expect(parent.end).toBe('2026-09-23');
+    expect(parent.end).toBe('2026-09-22');
     // 关键断言：父子同一口径，父工期走工作日归约，而非 28 自然日。
     expect(parent.duration).toEqual({ value: 1, unit: 'm' });
     expect(parent.duration).not.toEqual({ value: 28, unit: 'd' });

@@ -32,12 +32,12 @@ describe('toPlan 字段映射', () => {
     expect(tasks.map((t) => t.id)).toEqual(['T-0001', 'T-0002', 'T-0003', 'T-0004']);
   });
 
-  it('独占 end = finish + 1 天（MPP finish 为含内结束）', () => {
-    // 任务A finish=2026-10-08(inclusive) → end=2026-10-09(exclusive)
+  it('end = finish（MPP finish 为含内结束，与 K3 端点式 inclusive 对齐，v1.2.1）', () => {
+    // 任务A finish=2026-10-08(inclusive) → end=2026-10-08
     expect(tasks[1].input.start).toBe('2026-10-01');
-    expect(tasks[1].input.end).toBe('2026-10-09');
-    // 阶段一 finish=2026-10-15 → end=2026-10-16
-    expect(tasks[0].input.end).toBe('2026-10-16');
+    expect(tasks[1].input.end).toBe('2026-10-08');
+    // 阶段一 finish=2026-10-15 → end=2026-10-15
+    expect(tasks[0].input.end).toBe('2026-10-15');
   });
 
   it('父级链接用稳定 ID', () => {

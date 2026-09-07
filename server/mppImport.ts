@@ -23,7 +23,6 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { addDays } from '../shared/datetime';
 import { normalizePlan } from '../shared/scheduler';
 import {
   DomainError,
@@ -235,10 +234,10 @@ export function toPlan(result: MppImportResult): { name: string; tasks: Task[] }
   const tasks: Task[] = rawTasks.map((t) => {
     const id = ourIdOf.get(String(t.uid)) as string;
     const start = typeof t.start === 'string' && t.start.trim() !== '' ? t.start.trim() : null;
-    // MPP finish 为 inclusive → 本工具 end 独占，+1 天
+    // MPP finish 为 inclusive（最后工作日）→ 本工具 end 也是 inclusive（v1.2.1对齐 K3 端点式），直接存
     const end =
       typeof t.finish === 'string' && t.finish.trim() !== ''
-        ? addDays(t.finish.trim(), 1)
+        ? t.finish.trim()
         : null;
 
     const deps = (Array.isArray(t.predecessors) ? t.predecessors : [])

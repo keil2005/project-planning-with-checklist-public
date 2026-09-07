@@ -86,11 +86,9 @@ function finishDateTime(d: ISODate): string {
   return `${d}T${WORK_TO}`;
 }
 
-/** ENDPOINT [start,end) → MSP inclusive finish 日期（唯一转换点） */
+/** K18 唯一转换点：end 已经是 inclusive 最后工作日（v1.2.1对齐），Finish = end@16:00 */
 function inclusiveFinishDate(start: ISODate, end: ISODate): ISODate {
-  const days = diffDays(start, end);
-  if (days <= 1) return start;
-  return addDays(end, -1);
+  return end;
 }
 
 /**
