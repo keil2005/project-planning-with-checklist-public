@@ -56,6 +56,8 @@
 ## 界面截图
 
 > 示例项目：**Toy Race Car**（玩具赛车产品开发）
+>
+> 也可以先看在线产品介绍页：[https://99a786c8d3fc41fd8c503b2d203d04b5.app.workbuddy.link](https://99a786c8d3fc41fd8c503b2d203d04b5.app.workbuddy.link)
 
 ### 甘特图 + 任务表
 
