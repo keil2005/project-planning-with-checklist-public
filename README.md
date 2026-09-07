@@ -53,6 +53,22 @@
 | 多格式导出 | MSPDI XML（MS Project） + CSV（BOM/Excel） |
 | 工作日历 | 跳过周末 + 国定节假日（按计划开关） |
 
+## 界面截图
+
+> 示例项目：**Toy Race Car**（玩具赛车产品开发）
+
+### 甘特图 + 任务表
+
+左侧是任务与排程字段，右侧是甘特条；依赖关系、工作日历、关键路径一目了然。
+
+![甘特图 + 任务表](./docs/screenshots/screenshot-gantt.png)
+
+### 任务验收清单
+
+点击任务行的 TODO 按钮，右侧滑出交付清单抽屉：逐项勾选、分配给具体成员、实时进度一目了然。
+
+![任务验收清单](./docs/screenshots/screenshot-todo-drawer.png)
+
 ## 跨平台
 
 - **macOS**：Apple Silicon / Intel 都行（脚本会找 PATH 里的 node）
