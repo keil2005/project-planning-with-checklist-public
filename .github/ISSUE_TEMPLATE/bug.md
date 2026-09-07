@@ -28,7 +28,7 @@ assignees: ''
 
 - **OS**: <!-- macOS 14.5 / Windows 11 / Ubuntu 22.04 -->
 - **Browser**: <!-- Chrome 124 / Safari 17 / Firefox 126 -->
-- **plan-gantt version**: <!-- v1.0.0 / git commit hash -->
+- **Project Planning with Checklist version**: <!-- v1.0.0 / git commit hash -->
 - **Deployment**: <!-- Docker / npm install / source build -->
 - **Node version** (if applicable): <!-- v22.22.2 -->
 
@@ -46,6 +46,6 @@ assignees: ''
 
 ## Checklist
 
-- [ ] 我搜过 [现有 issue](https://github.com/keilzheng/plan-gantt/issues?q=is%3Aissue)，确认没重复
+- [ ] 我搜过 [现有 issue](https://github.com/keil2005/project-planning-with-checklist/issues?q=is%3Aissue)，确认没重复
 - [ ] 我用的是最新版
 - [ ] 我已隐藏截图/日志中的真实业务数据

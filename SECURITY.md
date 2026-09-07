@@ -20,7 +20,7 @@
 可用通道（按推荐顺序）：
 
 1. **邮件**（首选）— 上面邮箱
-2. **GitHub Security Advisories**：[仓库 Security tab → "New draft security advisory"](https://github.com/keilzheng/project-planning-with-checklist/security/advisories/new)（私有）
+2. **GitHub Security Advisories**：[仓库 Security tab → "New draft security advisory"](https://github.com/keil2005/project-planning-with-checklist/security/advisories/new)（私有）
 3. **加密** — 接收 PGP 公钥请求后我们 PGP 回复
 
 ### 报告内容
@@ -53,10 +53,10 @@
 
 ### 1. 网络暴露面
 
-- plan-gantt **不是为公网设计**。**只跑在受信任网络**（内网 / VPN / Tailscale）
+- Project Planning with Checklist **不是为公网设计**。**只跑在受信任网络**（内网 / VPN / Tailscale）
 - 默认监听 `127.0.0.1`，需要外部访问必须显式 `--host 0.0.0.0`
 - 反向代理（Nginx / Caddy）必须强制 HTTPS（Let's Encrypt）
-- 防火墙只开放 plan-gantt 端口；其他内网端口（3306/5432/6379）**不暴露**
+- 防火墙只开放 Project Planning with Checklist 端口；其他内网端口（3306/5432/6379）**不暴露**
 
 ### 2. 鉴权（v1.0 起强制）
 

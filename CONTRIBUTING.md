@@ -1,6 +1,6 @@
-# Contributing to plan-gantt
+# Contributing to Project Planning with Checklist
 
-> 感谢你愿意贡献 plan-gantt！这份文档会告诉你怎么提 issue / 写代码 / 提 PR。
+> 感谢你愿意贡献 Project Planning with Checklist！这份文档会告诉你怎么提 issue / 写代码 / 提 PR。
 
 ## 一句话原则
 
@@ -30,7 +30,7 @@ CI 全绿 + maintainer review
 
 ## 2. 提 Issue
 
-**先搜**：在 https://github.com/keilzheng/plan-gantt/issues 搜一下，避免重复。
+**先搜**：在 https://github.com/keil2005/project-planning-with-checklist/issues 搜一下，避免重复。
 
 **Bug 报告**：用 `.github/ISSUE_TEMPLATE/bug.md` 模板，必须含：
 - 复现步骤（一步一步来）
@@ -51,8 +51,8 @@ CI 全绿 + maintainer review
 ### 3.1 环境准备
 
 ```bash
-git clone https://github.com/<your-fork>/plan-gantt
-cd plan-gantt
+git clone https://github.com/<your-fork>/project-planning-with-checklist
+cd project-planning-with-checklist
 npm install
 npm test                  # 全跑（分段跑避免 OOM）
 npm run build              # 前端 + 服务端 bundle
@@ -137,7 +137,7 @@ NODE_OPTIONS=--max-old-space-size=2048 npx vitest run src/__tests__
 
 ## 5. 项目不变量（改动前必读）
 
-这些是 plan-gantt 的**核心承诺**，改动前请确认不会破坏：
+这些是 Project Planning with Checklist 的**核心承诺**，改动前请确认不会破坏：
 
 | ID | 不变量 |
 |---|---|
