@@ -72,6 +72,12 @@ export interface TaskComputed {
   derivedFrom: DeriveSource;
   fieldSources: FieldSources;
   isParent: boolean;
+  /**
+   * 是否里程碑（duration.value === 0 时为 true）。
+   * 仅叶子层有意义；父任务的 isMilestone 恒为 false（时间由子汇总，
+   * 自身不存在「零工期」语义）。start === end，由甘特渲染成实心圆。
+   */
+  isMilestone: boolean;
   /** 0-based */
   depth: number;
   hasError: boolean;
@@ -298,6 +304,11 @@ export interface ScheduleResult {
   order: string[];
   projectStart: ISODate;
   projectEnd: ISODate;
+  /**
+   * 关键路径上的叶子任务 ID（slack=0）。仅含叶子；父任务的派生时间不参与关键路径判定。
+   * ⚠️ 仅在 critical path 开关打开时被填充（关闭时为空数组，省一次遍历）。
+   */
+  criticalTaskIds: string[];
 }
 
 export interface ScheduleOptions {

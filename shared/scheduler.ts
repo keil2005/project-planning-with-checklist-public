@@ -40,8 +40,10 @@ import {
 import { normalizePeople } from './people';
 import { enforceTodoOwnerConsistency, sanitizeTodos } from './todo';
 import {
+  addDays,
   addDuration,
   countWorkingDays,
+  diffDays,
   diffDuration,
   formatISODate,
   isValidISODate,
@@ -622,14 +624,25 @@ function resolveLeaf(task: Task, ctx: LeafCtx, diagnostics: Diagnostic[]): TaskC
     }
   }
 
-  // ---- 依赖候选（§2.3）：cs = max(FS/SS candStart)，ce = max(FF/SF candEnd) ----
+// 里程碑（Q4-A，2026-09-08）：duration=0 即 start === end 的关键节点（甘特渲染为实心圆）。
+// 判定用「用户显式填 0」OR「收尾后 start === end」双保险；computed.duration 在 K3 端点式下
+// 端点 inclusive 把同一天计为 1 工作日，所以不能直接用 duration.value === 0。
+// ⚠️ 父任务不参与（rollupParent 始终 isMilestone=false）。
+const userWantsMilestone = D !== null && D.value === 0;
+
+  // ---- 依赖候选（§2.3）：cs = max(FS/SS candStart)，ce = max(FF/SF candEnd） ----
+  // K3 端点式 + 用户共识（2026-09-08）：FS 严格"次日开始"，需 +1 自然日作锚；
+  // FF 同天结束是合法的（"前序先关后，后序再封板"），不加；SS/SF 与 pred 共享端点，不加。
   const candStarts: ISODate[] = [];
   const candEnds: ISODate[] = [];
   for (const d of ctx.deps) {
     const pc = ctx.computed[d.predecessorId];
     if (!pc) continue; // 环内 / 尚未求值 → 忽略该约束（降级不崩）
-    const anchorDate = d.type === 'FS' || d.type === 'FF' ? pc.end : pc.start;
-    const cand = d.lag ? addDuration(anchorDate, d.lag, d.lagSign, ctx.calendar) : anchorDate;
+    let anchor: ISODate;
+    if (d.type === 'FS') anchor = addDays(pc.end, 1); // FS+1：严格"次日起"
+    else if (d.type === 'FF') anchor = pc.end; // FF：同天结束合法
+    else anchor = pc.start; // SS / SF：与 pred 共享端点
+    const cand = d.lag ? addDuration(anchor, d.lag, d.lagSign, ctx.calendar) : anchor;
     if (d.type === 'FS' || d.type === 'SS') candStarts.push(cand);
     else candEnds.push(cand);
   }
@@ -810,8 +823,10 @@ function resolveLeaf(task: Task, ctx: LeafCtx, diagnostics: Diagnostic[]): TaskC
     );
   }
 
-  // ---- 收尾统一处理（工作日口径：零工期才报错，见 N1d）----
-  if (countWorkingDays(start, end, ctx.calendar) === 0) {
+  // ---- 收尾统一处理（工作日口径：零工期才报错，但里程碑允许 start === end）----
+  // 判定里程碑（Q4-A）：用户显式 0d OR 收尾后 start === end。
+  const isMilestone = userWantsMilestone || start === end;
+  if (!isMilestone && countWorkingDays(start, end, ctx.calendar) === 0) {
     diagnostics.push(
       diag('error', ErrCode.ERR_NEGATIVE_DURATION, `结束 ${end} 必须晚于开始 ${start}（最短 1 个工作日）`, task.id, 'end'),
     );
@@ -826,6 +841,7 @@ function resolveLeaf(task: Task, ctx: LeafCtx, diagnostics: Diagnostic[]): TaskC
     derivedFrom,
     fieldSources: src,
     isParent: false,
+    isMilestone,
     depth: ctx.depth,
     hasError: false,
   };
@@ -854,6 +870,7 @@ function rollupParent(
     derivedFrom: 'ROLLUP',
     fieldSources: { start: 'ROLLUP', end: 'ROLLUP', duration: 'ROLLUP' },
     isParent: true,
+    isMilestone: false,
     depth,
     hasError: false,
   };
@@ -881,7 +898,7 @@ export function schedule(plan: Plan, opts: ScheduleOptions = {}): ScheduleResult
   }
 
   if (tasks.length === 0) {
-    return { computed: {}, diagnostics, order: [], projectStart: anchor, projectEnd: anchor };
+    return { computed: {}, diagnostics, order: [], projectStart: anchor, projectEnd: anchor, criticalTaskIds: [] };
   }
 
   const byId = buildTaskIndex(tasks);
@@ -1041,12 +1058,97 @@ export function schedule(plan: Plan, opts: ScheduleOptions = {}): ScheduleResult
   const projectStart = minDate(allComputed.map((c) => c.start)) ?? anchor;
   const projectEnd = maxDate(allComputed.map((c) => c.end)) ?? anchor;
 
-  return { computed, diagnostics, order, projectStart, projectEnd };
+  // criticalTaskIds 由 store 在调度结束后按开关按需调用 computeCriticalPath() 填充，
+  // 这里仅占位保持 ScheduleResult 形状稳定。
+  return { computed, diagnostics, order, projectStart, projectEnd, criticalTaskIds: [] };
 }
 
 /** 便捷：排程结果中是否存在 error 级诊断（K10 保存闸门） */
 export function hasBlockingError(diagnostics: Diagnostic[]): boolean {
   return diagnostics.some((d) => d.level === 'error');
+}
+
+/* ============================================================
+   5. 关键路径（CPM，2026-09-08 新增）
+   ============================================================ */
+
+/**
+ * 计算关键路径（slack=0 的叶子任务集合）。
+ *
+ * 算法（经典 CPM 在 ASAP 排程上的适配）：
+ *   1. 只算叶子。父任务的派生时间不参与（rollup 派生时间无独立 slack 语义）；
+ *   2. 默认 LF(t) = projectEnd（无后继时即项目终点）；
+ *   3. 反向遍历拓扑序，对每个任务 t，求 LF(t) = min over succ「succ 端点 - lag」；
+ *      - FS/FF：约束 t.end，最晚 LF = succ 端点反推 lag；
+ *      - SS/SF：约束 t.start，最晚 t.end = 起点反推 lag 后再加 t.duration 工作日；
+ *   4. slack = diffDays(t.end, LF(t))，slack=0 即关键。
+ *
+ * 复杂度 O(n²)：每对 pred/succ 一次约束计算。实际 plan 任务量级（≤ 几百）下
+ * 可接受；如未来 plan 量级超千，再换 Johnson 算法 / 拓扑序 DAG 最短路。
+ *
+ * 边界：
+ *   - 依赖冲突任务（WARN_DEP_CONFLICT）按 CPM 结果直接纳入关键路径——
+ *     算法不关心冲突，UI 会同时标红冲突与关键路径（Q3=a）。
+ *   - 里程碑（duration=0）：slack=0 当 t.end === LF；此时任务被视为关键路径上的点。
+ *   - 依赖环（ERR_CYCLE）：环内节点仍纳入算法，但 LF 计算在依赖缺失时回退到 projectEnd，
+ *     行为与无后继节点一致——通常是合理的。
+ */
+export function computeCriticalPath(plan: Plan, sched: ScheduleResult): Set<string> {
+  const computed = sched.computed;
+  const leaves = new Set<string>();
+  for (const id of sched.order) {
+    const c = computed[id];
+    if (c && !c.isParent) leaves.add(id);
+  }
+
+  const LF = new Map<string, ISODate>();
+  for (const id of sched.order) LF.set(id, sched.projectEnd);
+
+  for (let i = sched.order.length - 1; i >= 0; i -= 1) {
+    const t = sched.order[i];
+    const tComp = computed[t];
+    if (!tComp) continue;
+    let minLF: ISODate = sched.projectEnd;
+    for (const succ of plan.tasks) {
+      if (!leaves.has(succ.id)) continue;
+      const succComp = computed[succ.id];
+      if (!succComp) continue;
+      for (const d of succ.deps ?? []) {
+        if (d.predecessorId !== t) continue;
+        // succ 的被约束端点（FS/SS → start；FF/SF → end）
+        const succAnchor: ISODate = d.type === 'FS' || d.type === 'SS' ? succComp.start : succComp.end;
+        // 反向 LF 候选（与正向对称）：
+        //   FS  正向：succ.start ≥ pred.end + 1
+        //   FS  反向：pred.end ≤ succ.start - 1  → cand = succ.start - 1
+        //   FF  正向：succ.end ≥ pred.end       → 反向 cand = succ.end（无需移位）
+        //   SS  正向：succ.start ≥ pred.start   → 反向 cand = succ.start - pred.duration
+        //   SF  正向：succ.end ≥ pred.start     → 反向 cand = succ.end - pred.duration
+        let cand: ISODate = succAnchor;
+        if (d.type === 'FS') cand = addDays(succAnchor, -1);
+        if (d.lag) {
+          const sign: 1 | -1 = d.lagSign === 1 ? -1 : 1;
+          cand = addDuration(cand, d.lag, sign, NATURAL_CALENDAR);
+        }
+        // SS/SF：cand 实际是 t.start 的 LF，需加 t.duration（工作日）才能得到 t.end 的 LF
+        if (d.type === 'SS' || d.type === 'SF') {
+          cand = addDuration(cand, tComp.duration, 1, NATURAL_CALENDAR);
+        }
+        // ISO 日期字符串字典序 == 时间序，直接比
+        if (cand < minLF) minLF = cand;
+      }
+    }
+    LF.set(t, minLF);
+  }
+
+  const critical = new Set<string>();
+  for (const id of leaves) {
+    const tComp = computed[id];
+    if (!tComp) continue;
+    const lf = LF.get(id) ?? sched.projectEnd;
+    // slack=0 即关键（自然日差，避免周末/节假日把 slack 拉偏）
+    if (diffDays(tComp.end, lf) === 0) critical.add(id);
+  }
+  return critical;
 }
 
 /** 便捷：按 taskId 聚合诊断，供表格单元格标注 */

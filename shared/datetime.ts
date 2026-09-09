@@ -90,8 +90,8 @@ export function parseDuration(text: string | null | undefined): Duration {
     }
     value = Math.ceil(rawValue);
   }
-  if (value <= 0) {
-    throw new DomainError(ErrCode.ERR_DURATION_PARSE, `时长必须大于 0，收到「${text}」`);
+  if (value < 0) {
+    throw new DomainError(ErrCode.ERR_DURATION_PARSE, `时长不能为负，收到「${text}」`);
   }
   return { value, unit };
 }

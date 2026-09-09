@@ -177,7 +177,7 @@ function PlanPickerDialog(): JSX.Element {
               label={
                 <span className="flex flex-col text-[13px]">
                   <span>{tr('dlg.skipHolidays')}</span>
-                  <span className="text-[11px] text-slate-500">{tr('dlg.skipHolidaysHint')}</span>
+                  <span className="text-[11px] text-text-muted">{tr('dlg.skipHolidaysHint')}</span>
                 </span>
               }
             />
@@ -279,11 +279,11 @@ function HistoryDrawer(): JSX.Element {
     <>
       <Drawer anchor="right" open={open} onClose={() => closeDialog('history')}>
         <div className="flex h-full w-[420px] flex-col">
-          <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2">
+          <div className="flex items-center justify-between border-b border-border px-3 py-2">
             <div className="text-[14px] font-semibold">
               {tr('dlg.historyTitle')}
               {plan ? tr('dlg.historyPlanSuffix', { name: plan.name }) : ''}
-              <span className="ml-2 text-[12px] font-normal text-slate-500">
+              <span className="ml-2 text-[12px] font-normal text-text-muted">
                 {tr('dlg.versionCount', { n: sorted.length })}
               </span>
             </div>
@@ -300,22 +300,22 @@ function HistoryDrawer(): JSX.Element {
 
           <div className="min-h-0 flex-1 overflow-auto">
             {sorted.length === 0 ? (
-              <div className="p-3 text-[12px] text-slate-500">{tr('dlg.noHistory')}</div>
+              <div className="p-3 text-[12px] text-text-muted">{tr('dlg.noHistory')}</div>
             ) : (
               <List dense>
                 {sorted.map((v) => {
                   const isCurrent = plan !== null && preview === null && v.version === plan.version;
                   const isPreviewing = preview !== null && preview.version === v.version;
                   return (
-                    <div key={v.version} className="border-b border-slate-100 px-3 py-2">
+                    <div key={v.version} className="border-b border-border px-3 py-2">
                       <div className="flex items-center gap-2">
                         <Chip size="small" color={isCurrent ? 'primary' : 'default'} label={`v${v.version}`} />
-                        <span className="text-[12px] text-slate-600">{formatTimestampLocal(v.timestamp)}</span>
+                        <span className="text-[12px] text-text-muted">{formatTimestampLocal(v.timestamp)}</span>
                         <span className="text-[12px] font-medium">{v.editor}</span>
                         {isCurrent && <Chip size="small" variant="outlined" label={tr('dlg.current')} />}
                         {isPreviewing && <Chip size="small" color="warning" label={tr('dlg.previewing')} />}
                       </div>
-                      <div className="mt-1 whitespace-pre-wrap break-words text-[12px] text-slate-700">
+                      <div className="mt-1 whitespace-pre-wrap break-words text-[12px] text-text">
                         {v.notes}
                       </div>
                       <div className="mt-1 flex gap-2">
@@ -439,9 +439,9 @@ function CalendarSection({ title, items, newVal, onNewChange, onAdd, onRemove }:
   const tr = useT();
   return (
     <div className="mb-3">
-      <div className="mb-1 text-[12px] font-semibold text-slate-700">{title}</div>
+      <div className="mb-1 text-[12px] font-semibold text-text">{title}</div>
       <div className="flex flex-wrap gap-1">
-        {items.length === 0 && <span className="text-[12px] text-slate-400">{tr('dlg.emptyList')}</span>}
+        {items.length === 0 && <span className="text-[12px] text-text-subtle">{tr('dlg.emptyList')}</span>}
         {items.map((d) => (
           <Chip key={d} size="small" label={d} onDelete={() => onRemove(d)} />
         ))}
@@ -660,7 +660,7 @@ function ExportTodosDialog(): JSX.Element | null {
             label={
               <span>
                 {tr('exportMd.mine')}
-                <span className={hasUser ? 'ml-1 text-slate-500' : 'ml-1 text-slate-400'}>
+                <span className={hasUser ? 'ml-1 text-text-muted' : 'ml-1 text-text-subtle'}>
                   （{userLabel}）
                 </span>
               </span>

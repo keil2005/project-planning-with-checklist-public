@@ -1,23 +1,191 @@
+/**
+ * src/index.css —— 全局样式（双主题 token 化，2026-09-08）。
+ *
+ * 设计令牌说明：
+ *   - 所有颜色一律走 :root 下的 CSS 变量；
+ *   - dark 模式通过 [data-theme='dark'] 完全覆盖：文字色阶保证 WCAG AA 对比度；
+ *   - 锁定 [data-theme='dark'] 与本地 OS `prefers-color-scheme: dark` 行为等价，
+ *     即用户选 dark 后即便清 localStorage 也能保持视觉一致。
+ *   - SVG 元素的 fill/stroke 直接写 `var(--xxx)`（浏览器解析支持）。
+ *
+ * 不变量：
+ *   - 行高 32px、列高 36px，K16 不能动。
+ *   - Tailwind preflight 已关，保留 MUI CssBaseline 的基线。
+ */
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 /* ============================================================
-   全局 CSS 变量（K16：表格与甘特共用行高常量 ROW_H = 32）
-   ============================================================ */
+ * 设计令牌（语义层）—— light / dark 两套
+ * ============================================================ */
 :root {
+  /* 尺寸常量 */
   --row-h: 32px;
   --head-h: 36px;
   --gantt-day-w: 24px;
-  --grid-line: #e2e8f0;
-  --grid-line-strong: #cbd5e1;
-  --cell-derived: #64748b;
-  --err: #dc2626;
-  --warn: #d97706;
-  /* 筛选条高度：左右两侧**必须等高**，否则 K16 的 scrollTop 同步会在滚到底时错位 */
   --filter-bar-h: 34px;
+
+  /* 表面层（背景 / 卡片 / 抬升） */
+  --bg: #f8fafc;                 /* body */
+  --surface: #ffffff;            /* panel / card / filter bar / drawer body */
+  --surface-2: #f1f5f9;          /* table head / panel footer / drawer head */
+  --surface-3: #f8fafc;          /* 选中行 + driver cell bg 共享 */
+  --surface-elev: #ffffff;       /* popover / dialog */
+
+  /* 边框 */
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --border-focus: #2563eb;
+
+  /* 文字 */
+  --text: #0f172a;
+  --text-muted: #475569;
+  --text-subtle: #94a3b8;
+  --text-on-primary: #ffffff;
+
+  /* 品牌主色 */
+  --primary: #2563eb;
+  --primary-hover: #1d4ed8;
+  --primary-soft: #eff6ff;       /* driver cell bg / selected row bg（稍后 border 区分） */
+  --primary-border: #93c5fd;     /* selected row outline */
+  --primary-soft-strong: #dbeafe;/* focus 态 driver bg */
+
+  /* 状态色 */
+  --success: #16a34a;
+  --error: #dc2626;
+  --error-soft: #fef2f2;
+  --warn: #d97706;
+  --warn-soft: #fffbeb;
+
+  /* 语义：关键路径 / 里程碑 / 任务条 */
+  --critical: #ef4444;
+  --milestone: #3b82f6;
+  --milestone-stroke: #1d4ed8;
+  --bar: #3b82f6;
+  --bar-stroke: #1d4ed8;
+  --summary: #334155;
+  --link: #64748b;
+  --link-err: #dc2626;
+  --today: #ef4444;
+
+  /* 甘特网格 */
+  --grid-weak: #eef2f6;
+  --grid-strong: #cbd5e1;
+  --grid-weak-strong: #dfe6ee;   /* SVG 月初/周初弱线，避免与 grid-weak 完全同色 */
+  --weekend: #f8fafc;
+  --holiday: #fee2e2;
+  --makeup: #fff7ed;
+  --makeup-strip: #f59e0b;
+
+  /* Todo 徽章四态 */
+  --todo-empty-bg: #f1f5f9;
+  --todo-empty-fg: #94a3b8;
+  --todo-none-bg: #f1f5f9;
+  --todo-none-fg: #64748b;
+  --todo-partial-bg: #fffbeb;
+  --todo-partial-fg: #b45309;
+  --todo-done-bg: #ecfdf5;
+  --todo-done-fg: #047857;
+
+  /* Banner（calendar banner） */
+  --banner-ok-bg: #ecfdf5;
+  --banner-ok-fg: #047857;
+  --banner-warn-bg: #fffbeb;
+  --banner-warn-fg: #b45309;
+
+  /* 阴影 & 滚动条 */
+  --shadow: rgba(15, 23, 42, 0.16);
+  --shadow-strong: rgba(15, 23, 42, 0.24);
+  --scroll-thumb: #cbd5e1;
+  --scroll-thumb-hover: #94a3b8;
 }
 
+[data-theme='dark'] {
+  /* 表面层（dark bg 用 slate 900 系列，eye-friendly） */
+  --bg: #0f172a;                 /* slate-900 */
+  --surface: #1e293b;            /* slate-800 —— 卡片/抽屉主体 */
+  --surface-2: #111827;          /* gray-900 —— 表头/footer/drawer head */
+  --surface-3: #1e293b;          /* 选中行 / driver cell bg */
+  --surface-elev: #1e293b;
+
+  /* 边框：dark 描线不可过亮，对比度过高会刺眼 */
+  --border: #334155;
+  --border-strong: #475569;
+  --border-focus: #60a5fa;
+
+  /* 文字：保证 ≥ 4.5:1 对比度（slate-200 on slate-900 ≈ 12.6:1） */
+  --text: #e2e8f0;
+  --text-muted: #94a3b8;
+  --text-subtle: #64748b;
+  --text-on-primary: #0f172a;    /* dark 模式下亮蓝按钮需要深色字 */
+
+  /* 品牌主色（提亮一档，与深色背景配） */
+  --primary: #60a5fa;
+  --primary-hover: #93c5fd;
+  --primary-soft: #1e3a8a;       /* deep blue，区别于 bg */
+  --primary-border: #3b82f6;
+  --primary-soft-strong: #172554;/* focus deeper */
+
+  /* 状态色（饱和度降一档，提亮前景） */
+  --success: #4ade80;
+  --error: #f87171;
+  --error-soft: #450a0a;
+  --warn: #fbbf24;
+  --warn-soft: #451a03;
+
+  /* 关键路径 / 里程碑 / 任务条 */
+  --critical: #f87171;
+  --milestone: #60a5fa;
+  --milestone-stroke: #93c5fd;
+  --bar: #60a5fa;
+  --bar-stroke: #93c5fd;
+  --summary: #cbd5e1;
+  --link: #94a3b8;
+  --link-err: #f87171;
+  --today: #fb7185;
+
+  /* 甘特网格 */
+  --grid-weak: #1e293b;
+  --grid-strong: #334155;
+  --grid-weak-strong: #273447;
+  --weekend: #0b1220;
+  --holiday: #450a0a;
+  --makeup: #451a03;
+  --makeup-strip: #fbbf24;
+
+  /* Todo 徽章四态（dark 用 deep bg + bright fg） */
+  --todo-empty-bg: #1e293b;
+  --todo-empty-fg: #64748b;
+  --todo-none-bg: #1e293b;
+  --todo-none-fg: #94a3b8;
+  --todo-partial-bg: #451a03;
+  --todo-partial-fg: #fbbf24;
+  --todo-done-bg: #14532d;
+  --todo-done-fg: #86efac;
+
+  /* Banner */
+  --banner-ok-bg: #14532d;
+  --banner-ok-fg: #86efac;
+  --banner-warn-bg: #451a03;
+  --banner-warn-fg: #fbbf24;
+
+  /* 阴影 / 滚动条：dark 阴影更深更广，滚动条更亮 */
+  --shadow: rgba(0, 0, 0, 0.5);
+  --shadow-strong: rgba(0, 0, 0, 0.7);
+  --scroll-thumb: #475569;
+  --scroll-thumb-hover: #64748b;
+
+  /* MUI 组件视觉由 palette.mode 切换（hex 走 createTheme），此层仅给
+   * 主题感知 CSS selector 的"document root"信号位，不引 CSS 自定义属性
+   * 重写 MUI 内部色（v5.18 暂不暴露 --mui-palette-*，GA 在 v6）。
+   */
+}
+
+/* ============================================================
+ * 全局
+ * ============================================================ */
 html,
 body,
 #root {
@@ -30,14 +198,41 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', Roboto,
     Helvetica, Arial, sans-serif;
   font-size: 13px;
-  color: #0f172a;
-  background: #f8fafc;
+  color: var(--text);
+  background: var(--bg);
   overflow: hidden;
+  /* 主题切换时让色变平滑过渡，避免硬闪 */
+  transition: background-color 0.18s ease, color 0.18s ease;
+}
+
+* {
+  /* 边框颜色变化跟着主题走 */
+  border-color: var(--border);
+}
+
+/* 全局滚动条：OS 原生在 dark 下亮闪闪，自己接管 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+  border-radius: 4px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--scroll-thumb-hover);
 }
 
 /* ============================================================
-   表格
-   ============================================================ */
+ * 表格
+ * ============================================================ */
 .pg-row {
   height: var(--row-h);
   min-height: var(--row-h);
@@ -45,7 +240,9 @@ body {
   box-sizing: border-box;
   display: grid;
   align-items: center;
-  border-bottom: 1px solid var(--grid-line);
+  border-bottom: 1px solid var(--border);
+  /* 行 hover/select 时让底色平滑过渡 */
+  transition: background-color 0.1s ease;
 }
 
 .pg-head {
@@ -54,10 +251,10 @@ body {
   box-sizing: border-box;
   display: grid;
   align-items: center;
-  background: #f1f5f9;
-  border-bottom: 1px solid var(--grid-line-strong);
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border-strong);
   font-weight: 600;
-  color: #334155;
+  color: var(--text-muted);
 }
 
 .pg-cell {
@@ -65,10 +262,11 @@ body {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  border-right: 1px solid var(--grid-line);
+  border-right: 1px solid var(--border);
   height: 100%;
   display: flex;
   align-items: center;
+  color: var(--text);
 }
 
 .pg-input {
@@ -83,35 +281,69 @@ body {
   color: inherit;
   outline: none;
   box-sizing: border-box;
+  transition:
+    border-color 0.1s ease,
+    background-color 0.1s ease,
+    box-shadow 0.1s ease;
 }
 
 .pg-input:hover:not(:disabled) {
-  border-color: #cbd5e1;
+  border-color: var(--border-strong);
 }
 
 .pg-input:focus:not(:disabled) {
-  border-color: #2563eb;
-  background: #fff;
+  border-color: var(--border-focus);
+  background: var(--surface-elev);
+  /* 焦点凸起一个 outline 环，2px primary 同色 */
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.18);
+}
+[data-theme='dark'] .pg-input:focus:not(:disabled) {
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.28);
 }
 
 .pg-input:disabled {
-  color: var(--cell-derived);
+  color: var(--text-subtle);
   cursor: not-allowed;
+  background: transparent;
 }
 
 .pg-input--derived {
-  color: var(--cell-derived);
+  color: var(--text-subtle);
   font-style: italic;
 }
 
-.pg-input--error {
-  border-color: var(--err) !important;
-  background: #fef2f2;
+/* 驱动变量（实际任务、非父任务、用户手填 INPUT 字段）：浅色背景让用户一眼分清
+   "这条线是我钉死的 vs 被依赖推算的"。 */
+.pg-input--driver {
+  background: var(--primary-soft);
+}
+.pg-input--driver:focus:not(:disabled) {
+  background: var(--primary-soft-strong);
 }
 
+/* 关键路径单元格：浅红下划线（不影响高度）。仅在 critical path 开关打开时叠加。 */
+.pg-cell--critical {
+  position: relative;
+}
+.pg-cell--critical::after {
+  content: '';
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 0;
+  height: 2px;
+  background: var(--critical);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.pg-input--error {
+  border-color: var(--error) !important;
+  background: var(--error-soft) !important;
+}
 .pg-input--warn {
   border-color: var(--warn) !important;
-  background: #fffbeb;
+  background: var(--warn-soft) !important;
 }
 
 /* 开始/结束日期单元格：输入框 + 日历按钮同行，不撑破网格 */
@@ -147,15 +379,26 @@ body {
   width: 22px;
   height: 22px;
   padding: 0;
-  color: #64748b;
+  color: var(--text-subtle);
 }
 
 .pg-cal-btn:hover:not(:disabled) {
-  color: #2563eb;
+  color: var(--primary);
 }
 
+/* 行选中态：用 primary-soft + primary-border 边框，与 driver 区分开。
+   注意必须放在 .pg-row--selected 的最后，避免 driver / selected 同显时变成纯 driver */
+.pg-row--selected .pg-cell {
+  background: var(--primary-soft);
+}
 .pg-row--selected {
-  background: #eff6ff;
+  background: var(--primary-soft);
+  /* 选中行加左侧 3px primary 突出条 */
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+/* 行选 + driver 共存时，driver cell 仍保留更亮的 primary-soft-strong */
+.pg-row--selected .pg-cell .pg-input--driver {
+  background: var(--primary-soft-strong);
 }
 
 .pg-row--parent {
@@ -163,23 +406,19 @@ body {
 }
 
 /* ============================================================
-   表头列宽调整（U01）
-   ============================================================ */
-
-/* 表头单元格：为分隔条提供定位上下文 */
+ * 表头列宽调整
+ * ============================================================ */
 .pg-th {
   position: relative;
   user-select: none;
 }
 
-/* 列标题过长时省略，避免把分隔条挤出可视区 */
 .pg-th-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* 分隔条：贴在单元格右缘，7px 命中区，默认隐形、hover 显蓝线 */
 .pg-col-resizer {
   position: absolute;
   top: 0;
@@ -205,20 +444,18 @@ body {
 
 .pg-col-resizer:hover::after,
 .pg-col-resizer--active::after {
-  background: #2563eb;
+  background: var(--primary);
 }
 
-/* 拖拽期间全局锁定 col-resize 光标，并禁掉选中（否则会划选表头文字） */
 body.pg-resizing,
 body.pg-resizing * {
   cursor: col-resize !important;
   user-select: none !important;
 }
 
-/* -------- 人员单元格（负责人 / 顾问人）多选编辑器 --------
-   列宽默认 120px，塞不下多选标签，所以编辑态改用绝对定位浮层：
-   不占文档流 → 不撑高行（K16 行高恒 32px）；溢出方向朝右/朝下覆盖邻格与下方行。
-   前提：编辑态给单元格加 .pg-cell--people-editing 放开 overflow，否则浮层会被裁掉。 */
+/* ============================================================
+ * 人员单元格编辑器
+ * ============================================================ */
 .pg-cell--people {
   position: relative;
 }
@@ -237,17 +474,17 @@ body.pg-resizing * {
   max-height: 104px;
   overflow-y: auto;
   z-index: 30;
-  background: #fff;
-  border: 1px solid #2563eb;
+  background: var(--surface-elev);
+  border: 1px solid var(--primary);
   border-radius: 4px;
-  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.16);
+  box-shadow: 0 6px 16px var(--shadow);
   padding: 1px 4px 2px;
+  color: var(--text);
 }
 
-/* 左右面板底部状态条（左侧：模式提示；右侧：甘特图例）。
-   ★ 两侧**必须等高**：容器 clientHeight 一旦不同，两侧的最大滚动值就不同，
-     滚到底时 scrollTop 同步会被浏览器 clamp，最后一行的行对齐就破了（K16）。
-     所以这里用固定高度 + border-box，而不是由内容撑开。 */
+/* ============================================================
+ * 左右面板底部状态条（左右等高，K16）
+ * ============================================================ */
 .pg-panel-footer {
   height: 24px;
   min-height: 24px;
@@ -256,17 +493,17 @@ body.pg-resizing * {
   align-items: center;
   gap: 12px;
   padding: 0 8px;
-  border-top: 1px solid var(--grid-line);
-  background: #f8fafc;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
   font-size: 11px;
-  color: #64748b;
+  color: var(--text-subtle);
   overflow: hidden;
   white-space: nowrap;
 }
 
-/* 筛选（U03：表头下拉筛选 + Assign to me） */
-
-/* 顶部筛选条。左右两侧容器都要有，且等高 —— 见 FilterBar.tsx 顶部注释 */
+/* ============================================================
+ * 筛选条（左右等高，K16）
+ * ============================================================ */
 .pg-filter-bar {
   height: var(--filter-bar-h);
   min-height: var(--filter-bar-h);
@@ -275,10 +512,10 @@ body.pg-resizing * {
   align-items: center;
   gap: 6px;
   padding: 0 6px 0 8px;
-  border-bottom: 1px solid var(--grid-line);
-  background: #fff;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
   font-size: 12px;
-  color: #475569;
+  color: var(--text-muted);
   overflow: hidden;
   white-space: nowrap;
 }
@@ -309,28 +546,27 @@ body.pg-resizing * {
 }
 
 .pg-filter-chips--active {
-  color: #1d4ed8;
+  color: var(--primary);
   font-weight: 600;
 }
 
 .pg-filter-idle {
-  color: #94a3b8;
+  color: var(--text-subtle);
 }
 
 .pg-filter-count {
-  color: #64748b;
+  color: var(--text-subtle);
   font-variant-numeric: tabular-nums;
 }
 
-/* 表头漏斗：默认淡出，hover / 已筛选时显形 */
+/* 表头漏斗 */
 .pg-th-filter {
   margin-left: auto !important;
-  /* 让开表头右缘 7px 的列宽拖拽命中区，否则会抢走拖拽 */
   margin-right: 9px !important;
   padding: 1px !important;
   width: 20px;
   height: 20px;
-  color: #94a3b8;
+  color: var(--text-subtle);
   opacity: 0.5;
   transition:
     opacity 0.12s ease,
@@ -342,13 +578,16 @@ body.pg-resizing * {
 }
 
 .pg-th-filter:hover {
-  color: #2563eb;
+  color: var(--primary);
   background: rgba(37, 99, 235, 0.08);
+}
+[data-theme='dark'] .pg-th-filter:hover {
+  background: rgba(96, 165, 250, 0.12);
 }
 
 .pg-th-filter--on {
   opacity: 1;
-  color: #2563eb;
+  color: var(--primary);
 }
 
 /* 下拉筛选面板 */
@@ -359,16 +598,20 @@ body.pg-resizing * {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  background: var(--surface-elev);
+  border: 1px solid var(--border);
+  box-shadow: 0 6px 16px var(--shadow);
+  border-radius: 4px;
 }
 
 .pg-filter-title {
   font-size: 12px;
-  color: #475569;
+  color: var(--text-muted);
 }
 
 .pg-filter-hint {
   font-size: 11px;
-  color: #94a3b8;
+  color: var(--text-subtle);
 }
 
 .pg-filter-list {
@@ -393,13 +636,13 @@ body.pg-resizing * {
 }
 
 .pg-filter-label--blank {
-  color: #94a3b8;
+  color: var(--text-subtle);
   font-style: italic;
 }
 
 .pg-filter-empty {
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--text-subtle);
   padding: 6px 4px;
 }
 
@@ -411,16 +654,20 @@ body.pg-resizing * {
 .pg-filter-input {
   font-size: 12px;
   padding: 4px 6px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
 }
 
 .pg-date-input {
   font: inherit;
   font-size: 12px;
   padding: 4px 6px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--border-strong);
   border-radius: 4px;
-  background: #fff;
-  color: #0f172a;
+  background: var(--surface);
+  color: var(--text);
 }
 
 .pg-filter-actions {
@@ -431,8 +678,8 @@ body.pg-resizing * {
 }
 
 /* ============================================================
-   甘特
-   ============================================================ */
+ * 甘特 SVG 颜色
+ * ============================================================ */
 .pg-scroll {
   overflow: auto;
   height: 100%;
@@ -443,7 +690,7 @@ body.pg-resizing * {
   position: sticky;
   top: 0;
   z-index: 5;
-  background: #f1f5f9;
+  background: var(--surface-2);
 }
 
 .pg-gantt-svg {
@@ -453,8 +700,77 @@ body.pg-resizing * {
 
 .pg-gantt-svg text {
   font-size: 11px;
-  fill: #475569;
+  fill: var(--text-muted);
   user-select: none;
+}
+
+/* SVG fill/stroke 不读 CSS var：通过类名映射 token */
+.pg-gantt-svg .gantt-bar {
+  fill: var(--bar);
+  stroke: var(--bar-stroke);
+}
+.pg-gantt-svg .gantt-bar-error {
+  fill: var(--error);
+  stroke: var(--error);
+}
+.pg-gantt-svg .gantt-summary {
+  fill: var(--summary);
+  stroke: var(--summary);
+}
+.pg-gantt-svg .gantt-summary-error {
+  fill: var(--summary);
+  stroke: var(--error);
+}
+.pg-gantt-svg .gantt-milestone {
+  fill: var(--milestone);
+  stroke: var(--milestone-stroke);
+}
+.pg-gantt-svg .gantt-milestone-error {
+  fill: var(--error);
+  stroke: var(--error);
+}
+.pg-gantt-svg .gantt-critical {
+  stroke: var(--critical);
+}
+.pg-gantt-svg .gantt-link {
+  stroke: var(--link);
+  fill: none;
+}
+.pg-gantt-svg .gantt-link-err {
+  stroke: var(--link-err);
+  fill: none;
+  stroke-dasharray: 4 3;
+}
+.pg-gantt-svg .gantt-link-arrow {
+  fill: var(--link);
+}
+.pg-gantt-svg .gantt-link-arrow-err {
+  fill: var(--link-err);
+}
+.pg-gantt-svg .gantt-today {
+  stroke: var(--today);
+}
+.pg-gantt-svg .gantt-head-bg {
+  fill: var(--surface-2);
+}
+.pg-gantt-svg .gantt-grid-strong {
+  stroke: var(--grid-strong);
+}
+.pg-gantt-svg .gantt-grid-weak {
+  stroke: var(--grid-weak);
+}
+.pg-gantt-svg .gantt-grid-weak-strong {
+  stroke: var(--grid-weak-strong);
+}
+
+/* 选择 bar 高亮：在该任务行上加色 box（不撑破 32px 行高） */
+.pg-gantt-svg .gantt-bar-selected {
+  filter: drop-shadow(0 0 0 var(--primary)) brightness(1.08);
+}
+
+/* owner tspans 的副文字色 */
+.pg-gantt-svg .gantt-owner {
+  fill: var(--text-subtle);
 }
 
 .pg-bar {
@@ -465,70 +781,68 @@ body.pg-resizing * {
   filter: brightness(1.15);
 }
 
+/* SVG 内部 rect 背景色 */
+.pg-gantt-svg .gantt-selected-bg {
+  fill: var(--primary-soft);
+}
+
 /* ============================================================
-   工作日历横幅（T04）
-   ============================================================ */
+ * 工作日历 banner
+ * ============================================================ */
 .pg-banner {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 4px 12px;
   font-size: 12px;
-  border-bottom: 1px solid var(--grid-line);
+  border-bottom: 1px solid var(--border);
 }
 
 .pg-banner--ok {
-  background: #ecfdf5;
-  color: #047857;
+  background: var(--banner-ok-bg);
+  color: var(--banner-ok-fg);
 }
 
 .pg-banner--warn {
-  background: #fffbeb;
-  color: #b45309;
+  background: var(--banner-warn-bg);
+  color: var(--banner-warn-fg);
 }
 
 .pg-banner__dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #10b981;
+  background: var(--success);
   flex: none;
 }
 
 .pg-banner__dot--warn {
-  background: #f59e0b;
+  background: var(--warn);
 }
 
 /* ============================================================
-   甘特：非工作日着色 + 图例（T06）
-   ============================================================ */
+ * 甘特：非工作日着色
+ * ============================================================ */
 .pg-gantt-svg .gantt-holiday {
-  fill: #fee2e2;
+  fill: var(--holiday);
 }
-
-.pg-gantt-svg .gantt-makeup {
-  fill: #fff7ed;
+.pg-gantt-svg .gantt-makeup-cell {
+  fill: var(--makeup);
 }
-
 .pg-gantt-svg .gantt-weekend {
-  fill: #f8fafc;
+  fill: var(--weekend);
 }
-
 .pg-gantt-svg .gantt-makeup-strip {
-  fill: #f59e0b;
+  fill: var(--makeup-strip);
 }
 
 /* ============================================================
-   TODO 交付清单（U04）：徽章列 + 右侧抽屉
-   ============================================================ */
-
-/* 徽章单元格：居中，不参与列宽自适应（列窄，靠徽章自身撑开即可） */
+ * TODO 交付清单
+ * ============================================================ */
 .pg-cell--todo {
   padding: 0 2px;
 }
 
-/* x/y 徽章：收起态只显示 done/总数。四态语义见 TaskTable.TodoBadge 注释。
-   ★ 不能给整行加 hover 边框——K16 行高锁 32px，边框会顶破行高。 */
 .pg-todo-badge {
   display: inline-flex;
   align-items: center;
@@ -552,104 +866,91 @@ body.pg-resizing * {
 .pg-todo-badge:hover:not(:disabled) {
   filter: brightness(0.96);
 }
+[data-theme='dark'] .pg-todo-badge:hover:not(:disabled) {
+  filter: brightness(1.18);
+}
 
 .pg-todo-badge:focus-visible {
-  outline: 2px solid #2563eb;
+  outline: 2px solid var(--primary);
   outline-offset: 1px;
 }
 
-/* 0 项：灰「—」 */
 .pg-todo-badge--empty {
-  background: #f1f5f9;
-  color: #94a3b8;
+  background: var(--todo-empty-bg);
+  color: var(--todo-empty-fg);
 }
-
-/* 0/n：灰 */
 .pg-todo-badge--none {
-  background: #f1f5f9;
-  color: #64748b;
+  background: var(--todo-none-bg);
+  color: var(--todo-none-fg);
 }
-
-/* 部分完成：琥珀 */
 .pg-todo-badge--partial {
-  background: #fffbeb;
-  color: #b45309;
+  background: var(--todo-partial-bg);
+  color: var(--todo-partial-fg);
 }
-
-/* 全部完成：绿 */
 .pg-todo-badge--done {
-  background: #ecfdf5;
-  color: #047857;
+  background: var(--todo-done-bg);
+  color: var(--todo-done-fg);
 }
 
-/* ---------------- 右侧抽屉 ---------------- */
-
-/* 抽屉容器：固定宽 + 全高纵向布局。宽度只对移动端/窄屏做视口上限保护。
-   ★ 用户需求「抽屉宽度增加一倍」：360 → 720。 */
+/* 右侧抽屉 */
 .pg-todo-drawer {
   width: 720px;
   max-width: 88vw;
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: #fff;
+  background: var(--surface);
   box-sizing: border-box;
 }
 
-/* 头部：任务名 + 进度副标题 + 关闭按钮 */
 .pg-todo-head {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 12px 12px 10px 16px;
-  border-bottom: 1px solid var(--grid-line);
-  background: #f8fafc;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
 }
 
 .pg-todo-title {
   font-size: 14px !important;
   font-weight: 600 !important;
-  color: #0f172a;
+  color: var(--text);
   line-height: 20px;
 }
 
 .pg-todo-subtitle {
   font-size: 12px !important;
-  color: #64748b;
+  color: var(--text-subtle);
   line-height: 18px;
   margin-top: 2px;
 }
 
-/* 明细列表：占满剩余高度，可滚动 */
 .pg-todo-list {
   flex: 1 1 auto;
   overflow-y: auto;
   padding: 4px 0;
 }
 
-/* 单条 todo：checkbox + 文本 + assignee + 删除 */
 .pg-todo-row {
   display: flex;
   align-items: center;
   gap: 2px;
   padding: 2px 8px 2px 12px;
   min-height: 40px;
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: 1px solid var(--border);
 }
 
 .pg-todo-row:hover {
-  background: #f8fafc;
+  background: var(--surface-2);
 }
 
-/* 行尾操作组：上移 / 下移 / 删除 */
 .pg-todo-actions {
   display: flex;
   align-items: center;
   flex: 0 0 auto;
 }
 
-/* 文本输入框（textarea 自动撑高）：与表格单元格输入同风格，失焦/回车提交。
-   ★ 用户需求「todo 自动换行」：长文本软换行显示完整，min-height 而非固定 height。 */
 .pg-todo-text {
   flex: 1 1 auto;
   min-width: 0;
@@ -661,48 +962,68 @@ body.pg-resizing * {
   font: inherit;
   font-size: 13px;
   line-height: 20px;
-  color: #0f172a;
+  color: var(--text);
   outline: none;
   box-sizing: border-box;
   resize: none;
   overflow: hidden;
   white-space: pre-wrap;
   word-break: break-word;
+  transition:
+    border-color 0.1s ease,
+    background-color 0.1s ease;
 }
 
 .pg-todo-text:hover:not(:disabled) {
-  border-color: #cbd5e1;
+  border-color: var(--border-strong);
 }
 
 .pg-todo-text:focus:not(:disabled) {
-  border-color: #2563eb;
-  background: #fff;
+  border-color: var(--border-focus);
+  background: var(--surface-elev);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.18);
+}
+[data-theme='dark'] .pg-todo-text:focus:not(:disabled) {
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.28);
 }
 
 .pg-todo-text:disabled {
-  color: #64748b;
+  color: var(--text-subtle);
   cursor: not-allowed;
 }
 
 .pg-todo-text--done {
-  color: #94a3b8;
+  color: var(--text-subtle);
   text-decoration: line-through;
 }
 
-/* 空态提示 */
 .pg-todo-empty {
   padding: 28px 20px;
   text-align: center;
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--text-subtle);
 }
 
-/* 底部添加栏 */
 .pg-todo-add {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 10px 12px 12px 16px;
-  border-top: 1px solid var(--grid-line);
-  background: #f8fafc;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+/* ============================================================
+ * 工具栏 / 应用级微调
+ * ============================================================ */
+.pg-tooltip {
+  background: var(--text) !important;
+  color: var(--bg) !important;
+  font-size: 12px !important;
+}
+
+/* MUI Paper / Dialog 全局阴影/背景覆盖 */
+.MuiPaper-root.pg-paper {
+  background: var(--surface-elev);
+  color: var(--text);
 }

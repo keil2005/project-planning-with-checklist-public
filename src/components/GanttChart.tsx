@@ -41,24 +41,42 @@ const BAR_H = 16;
 /** 父任务汇总条高度 */
 const SUMMARY_H = 9;
 
+/** 里程碑圆点直径 */
+const MILESTONE_D = 10;
+
 /** 依赖折线的出/入短脚长度 */
 const STUB = 8;
 
 /** 底部留白行数（与表格「新增一行 + 留白」保持一致，保证滚动区间对齐） */
 const TAIL_ROWS = 3;
 
+/* SVG 颜色 token（CSS 变量；浏览器解析 SVG fill/stroke 中的 var()） */
 const COLOR = {
-  bar: '#3b82f6',
-  barStroke: '#1d4ed8',
-  barError: '#dc2626',
-  summary: '#334155',
-  link: '#64748b',
-  linkErr: '#dc2626',
-  today: '#ef4444',
-  gridWeak: '#eef2f6',
-  gridStrong: '#cbd5e1',
-  weekend: '#f8fafc',
-  selected: '#eff6ff',
+  bar: 'var(--bar)',
+  barStroke: 'var(--bar-stroke)',
+  barError: 'var(--error)',
+  summary: 'var(--summary)',
+  link: 'var(--link)',
+  linkErr: 'var(--link-err)',
+  today: 'var(--today)',
+  gridWeak: 'var(--grid-weak)',
+  gridStrong: 'var(--grid-strong)',
+  weekend: 'var(--weekend)',
+  selected: 'var(--primary-soft)',
+  /** 关键路径下划线（红），与冲突红区分（冲突红为虚线更粗） */
+  critical: 'var(--critical)',
+  /** 里程碑（实心圆） */
+  milestone: 'var(--milestone)',
+  /** 里程碑描边（与父任务汇总区分） */
+  milestoneStroke: 'var(--milestone-stroke)',
+  /** 月初 / 周首弱线（dark 下与 grid-weak 差异更大） */
+  gridWeakStrong: 'var(--grid-weak-strong)',
+  /** 头底色 */
+  headBg: 'var(--surface-2)',
+  /** 选中行背景 */
+  selectedBg: 'var(--primary-soft)',
+  /** owner 副文字 */
+  ownerTspan: 'var(--text-subtle)',
 };
 
 /* ============================ 轴刻度 ============================ */
@@ -220,6 +238,8 @@ export default function GanttChart({ scrollRef, onScroll }: GanttChartProps): JS
   const todayTick = useStore((s) => s.todayTick);
   const visible = useVisibleTasks();
   const calendar = useStore((s) => s.calendar);
+  const criticalPathOn = useStore((s) => s.criticalPathOn);
+  const criticalTaskIds = useStore((s) => s.criticalTaskIds);
 
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [dayHover, setDayHover] = useState<{ x: number; label: string; date: ISODate } | null>(null);
@@ -239,7 +259,16 @@ export default function GanttChart({ scrollRef, onScroll }: GanttChartProps): JS
   }, [sched?.projectStart, sched?.projectEnd, today]);
 
   const totalWidth = Math.max(360, range.totalDays * dayWidth);
-  const bodyHeight = (visible.length + TAIL_ROWS) * ROW_H;
+  // 2026-09-08 修复：甘特底部新增「里程碑 summary 行」——把所有 milestone 集中到一行展示。
+  // 仅当可见区内存在里程碑时为该行预留 1 个 ROW_H；其余情况不留空。
+  const milestones = useMemo(() => {
+    if (!sched) return [];
+    return visible
+      .map((t) => ({ t, c: sched.computed[t.id] }))
+      .filter(({ c }) => c?.isMilestone);
+  }, [visible, sched]);
+  const milestoneSummaryH = milestones.length > 0 ? ROW_H : 0;
+  const bodyHeight = (visible.length + TAIL_ROWS) * ROW_H + milestoneSummaryH;
 
   const axis = useMemo(
     () => buildAxis(range.rangeStart, range.totalDays, dayWidth),
@@ -313,7 +342,7 @@ export default function GanttChart({ scrollRef, onScroll }: GanttChartProps): JS
   // 未就绪时也要渲染等高筛选条：与左侧表格容器保持同高（K16 滚动同步）
   if (!plan || !sched) {
     return (
-      <div className="flex h-full flex-col overflow-hidden bg-white">
+      <div className="flex h-full flex-col overflow-hidden" style={{ background: 'var(--surface)' }}>
         <div className="pg-filter-bar" />
         <div className="pg-scroll" />
       </div>
@@ -357,7 +386,7 @@ export default function GanttChart({ scrollRef, onScroll }: GanttChartProps): JS
               y={geom.labelY}
               textAnchor="middle"
               fill={bad ? COLOR.linkErr : COLOR.link}
-              stroke="#ffffff"
+              stroke="var(--surface)"
               strokeWidth={3}
               paintOrder="stroke"
               style={{ fontSize: 10 }}
@@ -374,7 +403,7 @@ export default function GanttChart({ scrollRef, onScroll }: GanttChartProps): JS
   const todayInRange = todayX >= 0 && todayX <= totalWidth;
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-white">
+    <div className="flex h-full flex-col overflow-hidden" style={{ background: 'var(--surface)' }}>
       {/* 与左侧表格的筛选条等高：两侧可视高度必须一致，否则滚到底时 scrollTop 同步会错位 */}
       <FilterStatusBar />
       <div
@@ -394,7 +423,7 @@ export default function GanttChart({ scrollRef, onScroll }: GanttChartProps): JS
             height={HEAD_H}
             role="presentation"
           >
-            <rect x={0} y={0} width={totalWidth} height={HEAD_H} fill="#f1f5f9" />
+            <rect x={0} y={0} width={totalWidth} height={HEAD_H} fill={COLOR.headBg} />
             {axis.top.map((seg) => (
               <g key={`m-${seg.x}`}>
                 <line x1={seg.x} y1={0} x2={seg.x} y2={HEAD_H} stroke={COLOR.gridStrong} strokeWidth={1} />
@@ -410,7 +439,7 @@ export default function GanttChart({ scrollRef, onScroll }: GanttChartProps): JS
                   y1={HEAD_H / 2}
                   x2={t.x}
                   y2={HEAD_H}
-                  stroke={t.strong ? COLOR.gridStrong : '#dfe6ee'}
+                  stroke={t.strong ? COLOR.gridStrong : COLOR.gridWeakStrong}
                   strokeWidth={1}
                 />
                 {t.w >= 14 && (
@@ -529,6 +558,7 @@ export default function GanttChart({ scrollRef, onScroll }: GanttChartProps): JS
               const w = Math.max(2, xOf(addDays(c.end, 1)) - x);
               const cy = i * ROW_H + ROW_H / 2;
               const hasErr = errorTasks.has(t.id);
+              const isCritical = criticalPathOn && criticalTaskIds.has(t.id);
               // 人员可多人 → 顿号拼接；顾问人按裁定不上条（只作备注信息）
               const ownerText = formatPeople(t.owner);
               const onEnter = (e: MouseEvent<SVGGElement>): void => {
@@ -551,15 +581,56 @@ export default function GanttChart({ scrollRef, onScroll }: GanttChartProps): JS
                 return (
                   <g key={t.id} className="pg-bar" onMouseEnter={onEnter} onClick={() => selectTask(t.id)}>
                     <path d={d} fill={COLOR.summary} stroke={hasErr ? COLOR.barError : COLOR.summary} />
+                    {/* 关键路径下划线（父任务不参与 CPM，但视觉同步显示父任务是否跨越关键子任务——简单起见父任务不加） */}
                     <text x={x + w + 6} y={cy + 4} style={{ fontSize: 11, fontWeight: 600 }}>
                       <tspan>{t.name}</tspan>
                       {ownerText !== '' && dayWidth >= 6 && (
-                        <tspan fill="#94a3b8" fontWeight={400}>
+                        <tspan fill={COLOR.ownerTspan} fontWeight={400}>
                           {' · '}
                           {ownerText}
                         </tspan>
                       )}
                     </text>
+                  </g>
+                );
+              }
+
+              // 里程碑（Q4-A）：duration=0 → 实心圆，居中于 start 那天的 dayWidth/2 位置
+              if (c.isMilestone) {
+                const cx = x + dayWidth / 2;
+                const cyM = cy;
+                return (
+                  <g
+                    key={t.id}
+                    className="pg-bar"
+                    onMouseEnter={onEnter}
+                    onClick={() => selectTask(t.id)}
+                  >
+                    <title>{tr('gantt.milestoneTitle', { date: c.start })}</title>
+                    <circle
+                      cx={cx}
+                      cy={cyM}
+                      r={MILESTONE_D / 2}
+                      fill={hasErr ? COLOR.barError : COLOR.milestone}
+                      stroke={hasErr ? COLOR.barError : COLOR.milestoneStroke}
+                      strokeWidth={1.4}
+                    />
+                    <text x={cx + MILESTONE_D / 2 + 4} y={cy + 4} style={{ fontSize: 11 }}>
+                      <tspan>{t.name}</tspan>
+                      {ownerText !== '' && dayWidth >= 6 && (
+                        <tspan fill={COLOR.ownerTspan}>{' · '}{ownerText}</tspan>
+                      )}
+                    </text>
+                    {isCritical && (
+                      <line
+                        x1={cx - MILESTONE_D / 2 - 2}
+                        x2={cx + MILESTONE_D / 2 + 2}
+                        y1={cyM + MILESTONE_D / 2 + 2}
+                        y2={cyM + MILESTONE_D / 2 + 2}
+                        stroke={COLOR.critical}
+                        strokeWidth={2}
+                      />
+                    )}
                   </g>
                 );
               }
@@ -578,10 +649,21 @@ export default function GanttChart({ scrollRef, onScroll }: GanttChartProps): JS
                     stroke={hasErr ? COLOR.barError : COLOR.barStroke}
                     strokeWidth={hasErr ? 1.6 : 0.8}
                   />
+                  {/* 关键路径下划线（Q3）：bar 下方 2px 红线，跨越整条形 */}
+                  {isCritical && (
+                    <line
+                      x1={x}
+                      x2={x + w}
+                      y1={cy + BAR_H / 2 + 1}
+                      y2={cy + BAR_H / 2 + 1}
+                      stroke={COLOR.critical}
+                      strokeWidth={2}
+                    />
+                  )}
                   <text x={x + w + 6} y={cy + 4} style={{ fontSize: 11 }}>
                     <tspan>{t.name}</tspan>
                     {ownerText !== '' && dayWidth >= 6 && (
-                      <tspan fill="#94a3b8">{' · '}{ownerText}</tspan>
+                      <tspan fill={COLOR.ownerTspan}>{' · '}{ownerText}</tspan>
                     )}
                   </text>
                 </g>
@@ -600,12 +682,79 @@ export default function GanttChart({ scrollRef, onScroll }: GanttChartProps): JS
                 strokeDasharray="3 3"
               />
             )}
+
+            {/* 里程碑 summary 行（Q-2026-09-08）：把所有 milestone 集中在一行，按各自日期分散显示。
+                位于最末行任务之下，TAIL_ROWS 留白行之前，方便快速扫到所有关键节点。 */}
+            {milestones.length > 0 && (
+              <g className="pg-milestone-summary">
+                {/* 分隔线 */}
+                <line
+                  x1={0}
+                  x2={totalWidth}
+                  y1={visible.length * ROW_H - 0.5}
+                  y2={visible.length * ROW_H - 0.5}
+                  stroke={COLOR.gridStrong}
+                  strokeDasharray="4 3"
+                  strokeWidth={1}
+                />
+                {/* 行标签 */}
+                <text
+                  x={4}
+                  y={visible.length * ROW_H + 14}
+                  style={{ fontSize: 10, fill: COLOR.ownerTspan, fontWeight: 500 }}
+                >
+                  {tr('gantt.milestoneSummary', { count: milestones.length })}
+                </text>
+                {milestones.map(({ t, c }) => {
+                  const cx = xOf(c.start) + dayWidth / 2;
+                  const cy = visible.length * ROW_H + ROW_H / 2;
+                  const onEnter = (e: MouseEvent<SVGGElement>): void => {
+                    setHover({ x: cx, y: visible.length * ROW_H, task: t, computed: c });
+                    e.stopPropagation();
+                  };
+                  const isCrit = criticalPathOn && criticalTaskIds.has(t.id);
+                  return (
+                    <g
+                      key={`ms-${t.id}`}
+                      className="pg-bar"
+                      onMouseEnter={onEnter}
+                      onClick={() => selectTask(t.id)}
+                    >
+                      <title>{tr('gantt.milestoneTitle', { date: c.start })}</title>
+                      <circle
+                        cx={cx}
+                        cy={cy}
+                        r={MILESTONE_D / 2}
+                        fill={COLOR.milestone}
+                        stroke={COLOR.milestoneStroke}
+                        strokeWidth={1.4}
+                      />
+                      {isCrit && (
+                        <line
+                          x1={cx - MILESTONE_D / 2 - 2}
+                          x2={cx + MILESTONE_D / 2 + 2}
+                          y1={cy + MILESTONE_D / 2 + 2}
+                          y2={cy + MILESTONE_D / 2 + 2}
+                          stroke={COLOR.critical}
+                          strokeWidth={2}
+                        />
+                      )}
+                      {dayWidth >= 6 && (
+                        <text x={cx + MILESTONE_D / 2 + 4} y={cy + 4} style={{ fontSize: 10, fill: 'var(--text-muted)' }}>
+                          {t.name}
+                        </text>
+                      )}
+                    </g>
+                  );
+                })}
+              </g>
+            )}
           </svg>
 
           {/* ---------------- 悬浮详情 ---------------- */}
           {hover && (
             <div
-              className="pointer-events-none absolute z-10 rounded border border-slate-300 bg-white px-2 py-1 text-[11px] shadow-lg"
+              className="pointer-events-none absolute z-10 rounded border border-border-strong bg-[var(--surface-elev)] px-2 py-1 text-[11px] shadow-lg"
               style={{ left: hover.x + 8, top: hover.y + HEAD_H + ROW_H, maxWidth: 260 }}
             >
               <div className="mb-[2px] font-semibold">
@@ -618,14 +767,14 @@ export default function GanttChart({ scrollRef, onScroll }: GanttChartProps): JS
                   src: deriveLabel(hover.computed.derivedFrom),
                 })}
               </div>
-              {hover.computed.isParent && <div className="text-slate-500">{tr('gantt.parentSummary')}</div>}
+              {hover.computed.isParent && <div className="text-text-muted">{tr('gantt.parentSummary')}</div>}
             </div>
           )}
 
           {/* 非工作日列悬浮标签（T06） */}
           {dayHover && (
             <div
-              className="pointer-events-none absolute z-10 rounded border border-amber-300 bg-white px-2 py-1 text-[11px] shadow-lg"
+              className="pointer-events-none absolute z-10 rounded border border-[var(--warn)] bg-[var(--surface-elev)] px-2 py-1 text-[11px] shadow-lg"
               style={{ left: dayHover.x + dayWidth / 2, top: HEAD_H + 2, transform: 'translateX(-50%)' }}
             >
               <b>{dayHover.label}</b> · {dayHover.date}
@@ -646,15 +795,32 @@ export default function GanttChart({ scrollRef, onScroll }: GanttChartProps): JS
           {tr('gantt.legendSummary')}
         </span>
         <span className="inline-flex items-center gap-1">
+          <span
+            style={{
+              width: 12,
+              height: 12,
+              background: COLOR.milestone,
+              borderRadius: '50%',
+              display: 'inline-block',
+              border: `1.5px solid ${COLOR.milestoneStroke}`,
+            }}
+          />
+          {tr('gantt.legendMilestone')}
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span style={{ width: 14, height: 0, borderTop: `2px solid ${COLOR.critical}`, display: 'inline-block' }} />
+          {tr('gantt.legendCritical')}
+        </span>
+        <span className="inline-flex items-center gap-1">
           <span style={{ width: 14, height: 0, borderTop: `2px dashed ${COLOR.linkErr}`, display: 'inline-block' }} />
           {tr('gantt.legendConflict')}
         </span>
         <span className="inline-flex items-center gap-1">
-          <span style={{ width: 14, height: 8, background: '#fee2e2', display: 'inline-block', borderRadius: 2 }} />
+          <span style={{ width: 14, height: 8, background: 'var(--holiday)', display: 'inline-block', borderRadius: 2 }} />
           {tr('gantt.legendHoliday')}
         </span>
         <span className="inline-flex items-center gap-1">
-          <span style={{ width: 14, height: 4, background: '#f59e0b', display: 'inline-block', borderRadius: 2 }} />
+          <span style={{ width: 14, height: 4, background: 'var(--makeup-strip)', display: 'inline-block', borderRadius: 2 }} />
           {tr('gantt.legendMakeup')}
         </span>
         <span className="inline-flex items-center gap-1">

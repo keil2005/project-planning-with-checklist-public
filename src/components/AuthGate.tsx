@@ -362,7 +362,7 @@ function WorkspacePicker(): JSX.Element {
           ))}
         </List>
         {workspaces.length === 1 && (
-          <Box className="mt-2 text-[12px] text-slate-500">
+          <Box className="mt-2 text-[12px] text-text-muted">
             {tr('auth.onlyOneWs')}
             <Link
               component="button"

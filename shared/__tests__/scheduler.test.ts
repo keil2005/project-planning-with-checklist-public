@@ -3,7 +3,15 @@
  */
 import { describe, expect, it } from 'vitest';
 import { addDuration, diffDuration, parseDuration, subDuration } from '../datetime';
-import { buildIdSeqMaps, createEmptyTask, formatDepsExpr, normalizePlan, parseDepsExpr, schedule } from '../scheduler';
+import {
+  buildIdSeqMaps,
+  computeCriticalPath,
+  createEmptyTask,
+  formatDepsExpr,
+  normalizePlan,
+  parseDepsExpr,
+  schedule,
+} from '../scheduler';
 import { ErrCode, SCHEMA_VERSION, type Plan, type Task } from '../types';
 import { WEEKEND_ONLY } from './calendar.test';
 
@@ -151,7 +159,7 @@ describe('scheduler · 三选二决策矩阵', () => {
     expect(sched(good).diagnostics.some((d) => d.code === ErrCode.WARN_REDUNDANT_INPUT)).toBe(true);
   });
 
-  it('#8 仅时长 + FS 依赖 → 依赖驱动开始', () => {
+  it('#8 仅时长 + FS 依赖 → 依赖驱动开始（FS+1：后继起始于 pred.end+1 自然日）', () => {
     const a = task('T-0001', 'A', { input: { start: '2026-08-26', end: null, duration: '5d' } });
     const b = task('T-0002', 'B', {
       input: { start: null, end: null, duration: '3d' },
@@ -159,8 +167,9 @@ describe('scheduler · 三选二决策矩阵', () => {
     });
     const c = sched(makePlan([a, b])).computed;
     expect(c['T-0001'].end).toBe('2026-09-01');
-    expect(c['T-0002'].start).toBe('2026-09-01');
-    expect(c['T-0002'].end).toBe('2026-09-03');
+    // FS+1 修复（2026-09-08）：succ.start = pred.end + 1 = 2026-09-02
+    expect(c['T-0002'].start).toBe('2026-09-02');
+    expect(c['T-0002'].end).toBe('2026-09-04');
   });
 
   it('FF+1w 依赖驱动结束', () => {
@@ -233,14 +242,15 @@ describe('scheduler · 父子 rollup 与环检测', () => {
     expect(r.computed['T-0002'].start).toBe('2026-08-26');
   });
 
-  it('父任务可作为前置被依赖', () => {
+  it('父任务可作为前置被依赖（FS+1）', () => {
     const p = task('T-0001', '父');
     const k = task('T-0002', '子', { parentId: 'T-0001', input: { start: '2026-08-26', end: null, duration: '5d' } });
     const next = task('T-0003', '后继', {
       deps: [{ predecessorId: 'T-0001', type: 'FS', lag: null, lagSign: 1, raw: '1FS' }],
     });
     const c = sched(makePlan([p, k, next])).computed;
-    expect(c['T-0003'].start).toBe('2026-09-01');
+    // 父任务 end = 子任务 end = 2026-09-01；FS+1 → succ.start = 2026-09-02
+    expect(c['T-0003'].start).toBe('2026-09-02');
   });
 
   it('projectStart / projectEnd', () => {
@@ -281,5 +291,113 @@ describe('scheduler · normalizePlan 与性能', () => {
     const cost = Date.now() - t0;
     expect(r.diagnostics.filter((d) => d.level === 'error')).toHaveLength(0);
     expect(cost).toBeLessThan(200);
+  });
+});
+
+/* ------------------------------ milestone (2026-09-08 新增) ------------------------------ */
+
+describe('datetime · duration=0 = milestone', () => {
+  it('parseDuration 接受 0d / 0w / 0m', () => {
+    expect(parseDuration('0d')).toEqual({ value: 0, unit: 'd' });
+    expect(parseDuration('0w')).toEqual({ value: 0, unit: 'w' });
+    expect(parseDuration('0m')).toEqual({ value: 0, unit: 'm' });
+    expect(parseDuration('0')).toEqual({ value: 0, unit: 'd' });
+  });
+  it('parseDuration 仍拒绝负数', () => {
+    expect(() => parseDuration('-1d')).toThrow();
+  });
+});
+
+describe('scheduler · milestone 调度', () => {
+  it('duration=0 + start：start === end，isMilestone=true', () => {
+    const t = task('T-0001', '里程碑', {
+      input: { start: '2026-09-01', end: null, duration: '0d' },
+    });
+    const r = schedule(makePlan([t]));
+    expect(r.computed['T-0001']?.isMilestone).toBe(true);
+    expect(r.computed['T-0001']?.start).toBe('2026-09-01');
+    expect(r.computed['T-0001']?.end).toBe('2026-09-01');
+    // K3 端点式下同一天计为 1 工作日（端点 inclusive），但 isMilestone=true 标记用户意图
+    expect(r.diagnostics.filter((d) => d.level === 'error' && d.code === ErrCode.ERR_NEGATIVE_DURATION)).toHaveLength(0);
+  });
+  it('duration=0 + 依赖（FS）：按前置 end+1 自然日落点，里程碑仍同一天', () => {
+    const t1 = task('T-0001', '前置', { input: { start: '2026-09-01', end: null, duration: '2d' } });
+    const t2 = task('T-0002', '里程碑', {
+      deps: [{ predecessorId: 'T-0001', type: 'FS', lag: null, lagSign: 1, raw: '1FS' }],
+      input: { start: null, end: null, duration: '0d' },
+    });
+    const r = schedule(makePlan([t1, t2]));
+    expect(r.computed['T-0002']?.isMilestone).toBe(true);
+    // NATURAL + addDuration(d,2d,+1)：T-0001.start=2026-09-01 → end=2026-09-02
+    // FS+1（2026-09-08）：succ.start = pred.end + 1 = 2026-09-03
+    expect(r.computed['T-0002']?.start).toBe('2026-09-03');
+    expect(r.computed['T-0002']?.end).toBe('2026-09-03');
+  });
+  it('父任务的 isMilestone 恒为 false', () => {
+    const parent = task('T-0001', '父', { input: { start: '2026-09-01', end: null, duration: '5d' } });
+    const child = task('T-0002', '子', { parentId: 'T-0001', input: { start: '2026-09-02', end: null, duration: '1d' } });
+    const r = schedule(makePlan([parent, child]));
+    expect(r.computed['T-0001']?.isParent).toBe(true);
+    expect(r.computed['T-0001']?.isMilestone).toBe(false);
+  });
+});
+
+/* ------------------------------ critical path (2026-09-08 新增) ------------------------------ */
+
+describe('scheduler · critical path（CPM）', () => {
+  it('链式 A → B → C：A/B/C 全是关键', () => {
+    const t1 = task('T-0001', 'A', { input: { start: '2026-09-01', end: null, duration: '2d' } });
+    const t2 = task('T-0002', 'B', {
+      deps: [{ predecessorId: 'T-0001', type: 'FS', lag: null, lagSign: 1, raw: '1FS' }],
+      input: { start: null, end: null, duration: '2d' },
+    });
+    const t3 = task('T-0003', 'C', {
+      deps: [{ predecessorId: 'T-0002', type: 'FS', lag: null, lagSign: 1, raw: '2FS' }],
+      input: { start: null, end: null, duration: '2d' },
+    });
+    const r = schedule(makePlan([t1, t2, t3]));
+    const cp = computeCriticalPath(makePlan([t1, t2, t3]), r);
+    expect(cp.has('T-0001')).toBe(true);
+    expect(cp.has('T-0002')).toBe(true);
+    expect(cp.has('T-0003')).toBe(true);
+  });
+  it('分叉 A → B / A → C：A 关键、C 关键（更长分支），B slack>0 不关键', () => {
+    const t1 = task('T-0001', 'A', { input: { start: '2026-09-01', end: null, duration: '2d' } });
+    const t2 = task('T-0002', 'B', {
+      deps: [{ predecessorId: 'T-0001', type: 'FS', lag: null, lagSign: 1, raw: '1FS' }],
+      input: { start: null, end: null, duration: '2d' },
+    });
+    // C 比 B 长 1 天 → 项目终点在 C，关键路径走 A → C
+    const t3 = task('T-0003', 'C', {
+      deps: [{ predecessorId: 'T-0001', type: 'FS', lag: null, lagSign: 1, raw: '1FS' }],
+      input: { start: null, end: null, duration: '3d' },
+    });
+    const plan = makePlan([t1, t2, t3]);
+    const r = schedule(plan);
+    const cp = computeCriticalPath(plan, r);
+    // A 是所有后继的瓶颈 → 关键；C 决定了 projectEnd → 关键；B 有 slack → 不关键
+    expect(cp.has('T-0001')).toBe(true);
+    expect(cp.has('T-0002')).toBe(false);
+    expect(cp.has('T-0003')).toBe(true);
+  });
+  it('父任务不参与关键路径判定', () => {
+    const parent = task('T-0001', '父', { input: { start: '2026-09-01', end: null, duration: '5d' } });
+    const child = task('T-0002', '子', { parentId: 'T-0001', input: { start: '2026-09-02', end: null, duration: '1d' } });
+    const r = schedule(makePlan([parent, child]));
+    const cp = computeCriticalPath(makePlan([parent, child]), r);
+    expect(cp.has('T-0001')).toBe(false); // 父任务不在 critical set
+    expect(cp.has('T-0002')).toBe(true); // 子任务关键（唯一叶子）
+  });
+  it('里程碑 slack=0 时进关键路径', () => {
+    const t1 = task('T-0001', '前置', { input: { start: '2026-09-01', end: null, duration: '2d' } });
+    const t2 = task('T-0002', '里程碑', {
+      deps: [{ predecessorId: 'T-0001', type: 'FS', lag: null, lagSign: 1, raw: '1FS' }],
+      input: { start: null, end: null, duration: '0d' },
+    });
+    const plan = makePlan([t1, t2]);
+    const r = schedule(plan);
+    const cp = computeCriticalPath(plan, r);
+    expect(cp.has('T-0001')).toBe(true);
+    expect(cp.has('T-0002')).toBe(true);
   });
 });

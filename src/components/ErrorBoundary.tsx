@@ -47,10 +47,10 @@ export default class ErrorBoundary extends Component<Props, State> {
         style={{
           margin: 16,
           padding: 20,
-          border: '1px solid #fca5a5',
+          border: '1px solid var(--error)',
           borderRadius: 8,
-          background: '#fef2f2',
-          color: '#991b1b',
+          background: 'var(--error-soft)',
+          color: 'var(--error)',
           fontFamily: 'system-ui, sans-serif',
           fontSize: 13,
           lineHeight: 1.6,
@@ -65,10 +65,10 @@ export default class ErrorBoundary extends Component<Props, State> {
           onClick={this.handleRetry}
           style={{
             padding: '6px 14px',
-            border: '1px solid #991b1b',
+            border: '1px solid var(--error)',
             borderRadius: 6,
-            background: '#fff',
-            color: '#991b1b',
+            background: 'var(--surface)',
+            color: 'var(--error)',
             cursor: 'pointer',
           }}
         >

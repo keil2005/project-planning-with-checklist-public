@@ -15,6 +15,7 @@ import { buildWorkCalendar } from '../shared/calendar-build';
 import {
   buildIdSeqMaps,
   collectDescendants,
+  computeCriticalPath,
   computeVisibleTasks,
   createEmptyTask,
   diag,
@@ -143,6 +144,17 @@ export interface StoreState {
    * 轮询到服务端 revision > 本地值时，说明有他人并发修改，拉取合并。
    */
   todosRevision: number;
+  /**
+   * 关键路径开关（视图态，2026-09-08 新增）。
+   * 纯前端计算（CPM 经典算法），不开关每次调度都跳过计算；与 colw 一样持久化到 localStorage。
+   * 不入 plan / 不参与协同 / 不进版本。
+   */
+  criticalPathOn: boolean;
+  /**
+   * 当前计划的关键路径（叶子任务 ID 集合）。仅 criticalPathOn=true 时填充；
+   * 切换开关 / 重新调度都会重建。empty Set 表示「已关闭或尚未计算」。
+   */
+  criticalTaskIds: Set<string>;
 
   /* ---------------- 身份协作（v1.2.0） ---------------- */
   /** 启动时已探测完成（无论登录与否） */
@@ -218,6 +230,11 @@ export interface StoreState {
   /** MD 导出（U05 增量）；scope=mine 需 session.user 已选 */
   exportTodos: (scope: 'mine' | 'all') => void;
   setZoom: (zoom: ZoomLevel) => void;
+  /**
+   * 切换关键路径开关：翻转 criticalPathOn，按需（关→开）触发一次 CPM 计算；
+   * 持久化到 localStorage。
+   */
+  toggleCriticalPath: () => void;
   selectTask: (taskId: string | null) => void;
   jumpToday: () => void;
   /* 筛选（视图态，见 FilterState 注释） */
@@ -247,6 +264,11 @@ let initialized = false;
 let lastPolledHolder: string | null = null;
 
 const LS_USER_KEY = 'pg.user';
+/**
+ * 关键路径开关（2026-09-08）。值 'on' / 'off'，非法值按 off 兜底。
+ * 切计划保留（同浏览器）；不入 plan / 不参与协同 / 不进版本。
+ */
+const LS_CRITICAL_PATH_KEY = 'pg.criticalPath';
 
 const DEFAULT_LOCK_CFG: LockCfgPublic = {
   timeoutMs: 30_000,
@@ -259,6 +281,28 @@ const DEFAULT_LOCK_CFG: LockCfgPublic = {
 
 function clonePlan(plan: Plan): Plan {
   return JSON.parse(JSON.stringify(plan)) as Plan;
+}
+
+/**
+ * 从 localStorage 读关键路径开关。隐私模式 / 禁用存储时静默回退 off；
+ * 非法值（被改坏 / 跨版本污染）按 off 兜底。
+ */
+function loadCriticalPathFromLS(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.localStorage.getItem(LS_CRITICAL_PATH_KEY) === 'on';
+  } catch {
+    return false;
+  }
+}
+
+function saveCriticalPathToLS(on: boolean): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(LS_CRITICAL_PATH_KEY, on ? 'on' : 'off');
+  } catch {
+    /* 存储不可用时静默忽略；开关只是偏好，不值得打断用户 */
+  }
 }
 
 function errMessage(e: unknown): string {
@@ -457,6 +501,8 @@ export const useStore = create<StoreState>((set, get) => {
     filter: EMPTY_FILTER,
     todoDrawerTaskId: null,
     todosRevision: 0,
+    criticalPathOn: loadCriticalPathFromLS(),
+    criticalTaskIds: new Set<string>(),
 
     /* 工作日历（T04：全局单一真源） */
     calendar: null,
@@ -770,7 +816,9 @@ export const useStore = create<StoreState>((set, get) => {
           calendar: calendar ?? NATURAL_CALENDAR,
         });
         const parse = Object.values(parseDiag).flat();
-        set({ sched, diagnostics: [...parse, ...sched.diagnostics] });
+        // 关键路径：仅在开关打开时计算（关→空 Set，省一次 O(n²) 遍历）
+        const criticalTaskIds = get().criticalPathOn ? computeCriticalPath(plan, sched) : new Set<string>();
+        set({ sched, diagnostics: [...parse, ...sched.diagnostics], criticalTaskIds });
       } catch (e) {
         // 排程引擎异常绝不能冒泡到事件处理器导致整页卸载；降级为 error 诊断 + toast。
         // eslint-disable-next-line no-console
@@ -1223,6 +1271,18 @@ export const useStore = create<StoreState>((set, get) => {
     },
 
     setZoom: (zoom: ZoomLevel) => set({ zoom }),
+
+    toggleCriticalPath: () => {
+      const next = !get().criticalPathOn;
+      saveCriticalPathToLS(next);
+      // 关 → 清空（避免旧 Set 被误读为"开启但无关键"）；开 → 立刻按当前 sched 重算
+      if (!next) {
+        set({ criticalPathOn: false, criticalTaskIds: new Set<string>() });
+      } else {
+        set({ criticalPathOn: true });
+        get().recompute();
+      }
+    },
 
     selectTask: (taskId: string | null) => set({ selectedTaskId: taskId }),
 

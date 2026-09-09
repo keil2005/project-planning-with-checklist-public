@@ -114,8 +114,12 @@ interface CellInputProps {
   /** 存在解析错误时保留用户原文，避免输入被规整逻辑抹掉 */
   preserveDraft?: boolean;
   indentPx?: number;
+  /**
+   * 是否「驱动变量」：用户手填的字段（fieldSources === 'INPUT'）。
+   * 仅视觉提示（浅蓝背景），不影响可编辑性。
+   */
+  isDriver?: boolean;
   onCommit: (value: string) => void;
-  onEnter?: () => void;
   onFocusCell?: () => void;
 }
 
@@ -132,8 +136,8 @@ function CellInput(props: CellInputProps): JSX.Element {
     title,
     preserveDraft = false,
     indentPx = 0,
+    isDriver = false,
     onCommit,
-    onEnter,
     onFocusCell,
   } = props;
 
@@ -159,7 +163,7 @@ function CellInput(props: CellInputProps): JSX.Element {
 
   const input = (
     <input
-      className={`pg-input ${derived ? 'pg-input--derived' : ''} ${diagClass(diagnostic)}`}
+      className={`pg-input ${derived ? 'pg-input--derived' : ''} ${isDriver ? 'pg-input--driver' : ''} ${diagClass(diagnostic)}`}
       style={indentPx > 0 ? { paddingLeft: indentPx } : undefined}
       value={draft}
       disabled={disabled}
@@ -175,11 +179,12 @@ function CellInput(props: CellInputProps): JSX.Element {
       }}
       onKeyDown={(e) => {
         if (e.key === 'Enter') {
+          // Q1 (2026-09-08)：Enter 仅作"确认当前输入"——不再触发 onEnterNewRow / addRow。
+          // 新建行的入口只剩"+"按钮（操作列）与底部「新增一行」按钮。
           e.preventDefault();
           setEditing(false);
           commit(draft);
           (e.currentTarget as HTMLInputElement).blur();
-          onEnter?.();
         } else if (e.key === 'Escape') {
           e.preventDefault();
           setDraft(value);
@@ -209,7 +214,7 @@ function HighlightText({ text, query }: { text: string; query: string }): JSX.El
   return (
     <>
       {text.slice(0, idx)}
-      <mark style={{ background: '#fde68a', color: 'inherit', padding: '0 1px', borderRadius: 2 }}>
+      <mark style={{ background: 'var(--warn-soft)', color: 'inherit', padding: '0 1px', borderRadius: 2 }}>
         {text.slice(idx, idx + q.length)}
       </mark>
       {text.slice(idx + q.length)}
@@ -337,7 +342,7 @@ function PeopleCell(props: PeopleCellProps): JSX.Element {
         {text !== '' ? (
           text
         ) : (
-          <span className="text-slate-400">—</span>
+          <span className="text-text-subtle">—</span>
         )}
       </div>
     );
@@ -425,7 +430,7 @@ function PeopleCell(props: PeopleCellProps): JSX.Element {
                 </span>
               ) : (
                 <span style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
-                  <span style={{ width: 18, flex: '0 0 18px', color: '#2563eb' }}>{selected ? '✓' : ''}</span>
+                  <span style={{ width: 18, flex: '0 0 18px', color: 'var(--primary)' }}>{selected ? '✓' : ''}</span>
                   <HighlightText text={option} query={iv} />
                 </span>
               )}
@@ -499,6 +504,10 @@ interface RowProps {
   task: Task;
   computed: TaskComputed | undefined;
   depth: number;
+  /**
+   * 视觉/汇总意义上的"父任务"（有子任务的才走 rollupParent）。
+   * 与 timeLocked 区分：父任务身份用 isParent，时间/duration 是否可输入用 parentId。
+   */
   isParent: boolean;
   collapsed: boolean;
   idToSeq: Map<string, number>;
@@ -510,12 +519,17 @@ interface RowProps {
    */
   canAdd: boolean;
   selected: boolean;
+  /**
+   * 该任务是否处于关键路径（仅叶子层判定，slack=0）。
+   * 仅在 critical path 开关打开时传递；用于单元格下方红色细线。
+   */
+  isCritical: boolean;
   /** 列宽由滚动容器上的 CSS 变量驱动，这里只放不随列宽变化的部分 */
   gridStyle: CSSProperties;
 }
 
 function TaskRow(props: RowProps): JSX.Element {
-  const { task, computed, depth, isParent, collapsed, idToSeq, diagnostics, canEdit, canAdd, selected, gridStyle } = props;
+  const { task, computed, depth, isParent, collapsed, idToSeq, diagnostics, canEdit, canAdd, selected, isCritical, gridStyle } = props;
   const tr = useT();
 
   const updateCell = useStore((s) => s.updateCell);
@@ -558,13 +572,24 @@ function TaskRow(props: RowProps): JSX.Element {
   const srcEnd = computed?.fieldSources.end ?? 'INPUT';
   const srcDuration = computed?.fieldSources.duration ?? 'INPUT';
 
-  const parentTip = tr('derive.parentTip');
-  const timeDisabled = !canEdit || isParent;
+    const parentTip = tr('derive.parentTip');
+  // Q6 + 2026-09-08 修正：只有「是父任务」（有子任务 → 时间/时长由子 rollup 汇总）才锁死输入。
+  // 之前误用 parentId !== null 导致「有 parentId 的子叶子任务」也被锁（用户实测：子任务时长无法编辑）。
+  // 正确判定：任务自身是否有子——isParent 已由父级调用处算好（hasChildren || parentSet）。
+  const isLocked = isParent;
+  const timeDisabled = !canEdit || isLocked;
 
-  // 筛选生效时不允许插入：新行会被立刻过滤掉，看起来像「点了没反应」
-  const onEnterNewRow = (): void => {
-    if (canAdd) addRow(task.id);
-  };
+  // 驱动变量（Q2-A）：仅叶子层 + 用户手填（INPUT）的字段算"驱动变量"——加浅蓝背景。
+  // 父任务的字段已全锁，无需 driver 提示。Q-2026-09-08：扩展到 deps（四类手填变量齐）。
+  const driverStart = !isLocked && srcStart === 'INPUT';
+  const driverEnd = !isLocked && srcEnd === 'INPUT';
+  const driverDuration = !isLocked && srcDuration === 'INPUT';
+  // deps 没有 fieldSources.deps，按"用户已填且无语法错"判定为驱动变量
+  const driverDeps =
+    !isLocked &&
+    !depsDiag &&
+    Array.isArray(task.deps) &&
+    task.deps.length > 0;
 
   /** 时间字段提交：手填落到非工作日时，挂起确认弹窗；否则直接写 input */
   const commitTime = (field: 'start' | 'end', value: string): void => {
@@ -575,6 +600,9 @@ function TaskRow(props: RowProps): JSX.Element {
     }
   };
 
+  // 关键路径：仅在开关开 + 当前任务在 criticalTaskIds 时，外层 .pg-cell 加 .pg-cell--critical（红色下划线）
+  const criticalCellCls = isCritical ? 'pg-cell--critical' : '';
+
   return (
     <div
       className={`pg-row ${selected ? 'pg-row--selected' : ''} ${isParent ? 'pg-row--parent' : ''}`}
@@ -582,7 +610,7 @@ function TaskRow(props: RowProps): JSX.Element {
       onMouseDown={() => selectTask(task.id)}
     >
       {/* 行号（只读，等于依赖表达式里引用的编号） */}
-      <div className="pg-cell justify-center text-[12px] text-slate-500">{task.seq}</div>
+      <div className="pg-cell justify-center text-[12px] text-text-muted">{task.seq}</div>
 
       {/* 任务名称：折叠三角 + 层级缩进 */}
       <div className="pg-cell gap-[2px]">
@@ -609,23 +637,22 @@ function TaskRow(props: RowProps): JSX.Element {
           diagnostic={rowDiag}
           placeholder={tr('task.placeholderName')}
           onCommit={(v) => updateCell(task.id, 'name', v)}
-          onEnter={onEnterNewRow}
           onFocusCell={() => selectTask(task.id)}
         />
       </div>
 
       {/* 开始 */}
-      <div className="pg-cell pg-cell--date">
+      <div className={`pg-cell pg-cell--date ${criticalCellCls}`}>
         <div className="pg-date-wrap">
           <CellInput
             value={startText}
             disabled={timeDisabled}
             derived={srcStart !== 'INPUT'}
+            isDriver={driverStart}
             diagnostic={startDiag}
-            placeholder="YYYY-MM-DD"
-            title={isParent ? parentTip : deriveLabel(srcStart)}
+            placeholder={isLocked ? tr('task.parentLocked') : 'YYYY-MM-DD'}
+            title={isLocked ? parentTip : deriveLabel(srcStart)}
             onCommit={(v) => commitTime('start', v)}
-            onEnter={onEnterNewRow}
             onFocusCell={() => selectTask(task.id)}
           />
           <IconButton
@@ -649,17 +676,17 @@ function TaskRow(props: RowProps): JSX.Element {
       </div>
 
       {/* 结束（半开区间：不含当天） */}
-      <div className="pg-cell pg-cell--date">
+      <div className={`pg-cell pg-cell--date ${criticalCellCls}`}>
         <div className="pg-date-wrap">
           <CellInput
             value={endText}
             disabled={timeDisabled}
             derived={srcEnd !== 'INPUT'}
+            isDriver={driverEnd}
             diagnostic={endDiag}
-            placeholder="YYYY-MM-DD"
-            title={isParent ? parentTip : deriveLabel(srcEnd)}
+            placeholder={isLocked ? tr('task.parentLocked') : 'YYYY-MM-DD'}
+            title={isLocked ? parentTip : deriveLabel(srcEnd)}
             onCommit={(v) => commitTime('end', v)}
-            onEnter={onEnterNewRow}
             onFocusCell={() => selectTask(task.id)}
           />
           <IconButton
@@ -683,32 +710,32 @@ function TaskRow(props: RowProps): JSX.Element {
       </div>
 
       {/* 时长 */}
-      <div className="pg-cell">
+      <div className={`pg-cell ${criticalCellCls}`}>
         <CellInput
           value={durationText}
           disabled={timeDisabled}
           derived={srcDuration !== 'INPUT'}
+          isDriver={driverDuration}
           diagnostic={durationDiag}
-          placeholder="5d / 2w / 1m"
-          title={isParent ? parentTip : deriveLabel(srcDuration)}
+          placeholder={isLocked ? tr('task.parentLocked') : tr('task.placeholderDuration')}
+          title={isLocked ? parentTip : deriveLabel(srcDuration)}
           onCommit={(v) => updateCell(task.id, 'duration', v)}
-          onEnter={onEnterNewRow}
           onFocusCell={() => selectTask(task.id)}
         />
       </div>
 
-      {/* 依赖 */}
-      <div className="pg-cell">
+      {/* 依赖（父任务也禁——避免被 rollup 时丢弃而迷惑） */}
+      <div className={`pg-cell ${criticalCellCls}`}>
         <CellInput
           value={depsText}
-          disabled={!canEdit}
+          disabled={timeDisabled}
           derived={false}
+          isDriver={driverDeps}
           diagnostic={depsDiag}
-          placeholder="2FS,3FF+1w"
-          title={tr('task.depsHint')}
+          placeholder={isLocked ? tr('task.parentLocked') : '2FS,3FF+1w'}
+          title={isLocked ? parentTip : tr('task.depsHint')}
           preserveDraft={depsDiag?.code === ErrCode.ERR_DEP_PARSE || depsDiag?.code === ErrCode.ERR_DEP_TARGET_MISSING}
           onCommit={(v) => updateCell(task.id, 'deps', v)}
-          onEnter={onEnterNewRow}
           onFocusCell={() => selectTask(task.id)}
         />
       </div>
@@ -819,6 +846,7 @@ export default function TaskTable({ scrollRef, onScroll }: TaskTableProps): JSX.
   const diagnostics = useStore((s) => s.diagnostics);
   const selectedTaskId = useStore((s) => s.selectedTaskId);
   const addRow = useStore((s) => s.addRow);
+  const criticalTaskIds = useStore((s) => s.criticalTaskIds);
   const canEdit = useCanEdit();
   const visible = useVisibleTasks();
   const filter = useStore((s) => s.filter);
@@ -962,7 +990,7 @@ export default function TaskTable({ scrollRef, onScroll }: TaskTableProps): JSX.
   // 未打开计划时也要渲染等高筛选条：与右侧甘特容器保持同高（K16 滚动同步）
   if (!plan) {
     return (
-      <div className="flex h-full flex-col overflow-hidden border-r border-slate-200 bg-white">
+      <div className="flex h-full flex-col overflow-hidden border-r border-border bg-surface">
         <div className="pg-filter-bar" />
         <div className="pg-scroll" />
       </div>
@@ -970,7 +998,7 @@ export default function TaskTable({ scrollRef, onScroll }: TaskTableProps): JSX.
   }
 
   return (
-    <div className="flex h-full flex-col overflow-hidden border-r border-slate-200 bg-white">
+    <div className="flex h-full flex-col overflow-hidden border-r border-border bg-surface">
       <FilterBar />
       <div ref={scrollRef} className="pg-scroll" onScroll={onScroll} style={containerVars}>
         {/* 表头（每列右缘有分隔条，可拖拽调宽 / 双击自适应） */}
@@ -1016,6 +1044,7 @@ export default function TaskTable({ scrollRef, onScroll }: TaskTableProps): JSX.
               canEdit={canEdit}
               canAdd={canEdit && !filtering}
               selected={selectedTaskId === t.id}
+              isCritical={criticalTaskIds.has(t.id)}
               gridStyle={gridStyle}
             />
           </div>
@@ -1023,14 +1052,14 @@ export default function TaskTable({ scrollRef, onScroll }: TaskTableProps): JSX.
 
         {/* 追加行 */}
         <div className="pg-row" style={gridStyle}>
-          <div className="pg-cell justify-center text-slate-400">+</div>
+          <div className="pg-cell justify-center text-text-subtle">+</div>
           <div className="pg-cell">
             <button
               type="button"
               disabled={!canEdit || filtering}
               title={filtering ? tr('task.clearFilterFirst') : undefined}
               onClick={() => addRow()}
-              className="text-[12px] text-blue-600 disabled:cursor-not-allowed disabled:text-slate-400"
+              className="text-[12px] text-primary disabled:cursor-not-allowed disabled:text-text-subtle"
             >
               {tr('task.addRow')}
             </button>

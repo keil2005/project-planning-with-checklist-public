@@ -33,8 +33,12 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import SaveIcon from '@mui/icons-material/Save';
 import TodayIcon from '@mui/icons-material/Today';
 import TranslateIcon from '@mui/icons-material/Translate';
+import LightModeIcon from '@mui/icons-material/LightMode';
+import DarkModeIcon from '@mui/icons-material/DarkMode';
+import DesktopWindowsIcon from '@mui/icons-material/DesktopWindows';
 import { useCanEdit, useHasError, useStore } from '../store';
 import { useT, useLangStore, langLabel } from '../i18n';
+import { useThemeMode, type ThemeMode } from '../theme';
 import type { ZoomLevel } from '../../shared/types';
 
 export default function Toolbar(): JSX.Element {
@@ -56,6 +60,8 @@ export default function Toolbar(): JSX.Element {
   const importPlan = useStore((s) => s.importPlan);
   const authed = useStore((s) => s.authed);
   const logout = useStore((s) => s.logout);
+  const criticalPathOn = useStore((s) => s.criticalPathOn);
+  const toggleCriticalPath = useStore((s) => s.toggleCriticalPath);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -67,6 +73,13 @@ export default function Toolbar(): JSX.Element {
   const tr = useT();
   const lang = useLangStore((s) => s.lang);
   const toggleLang = useLangStore((s) => s.toggle);
+  const themeMode = useThemeMode();
+
+  const themeButtons: { value: ThemeMode; icon: JSX.Element; label: string }[] = [
+    { value: 'light', icon: <LightModeIcon fontSize="small" />, label: tr('toolbar.themeLight') },
+    { value: 'dark', icon: <DarkModeIcon fontSize="small" />, label: tr('toolbar.themeDark') },
+    { value: 'system', icon: <DesktopWindowsIcon fontSize="small" />, label: tr('toolbar.themeSystem') },
+  ];
 
   const lockLabel = useMemo(() => {
     if (canEdit) return tr('toolbar.editingMe');
@@ -81,7 +94,7 @@ export default function Toolbar(): JSX.Element {
   const saveDisabled = !canEdit || !dirty || hasError || busy;
 
   return (
-    <div className="flex flex-wrap items-center gap-2 border-b border-slate-300 bg-white px-3 py-[6px]">
+    <div className="flex flex-wrap items-center gap-2 border-b border-border-strong bg-surface px-3 py-[6px]">
       {/* 计划名 + 版本 */}
       <div className="flex min-w-0 items-center gap-2">
         <span className="truncate text-[14px] font-semibold">{plan ? plan.name : tr('toolbar.noPlan')}</span>
@@ -266,6 +279,39 @@ export default function Toolbar(): JSX.Element {
       <Button startIcon={<TodayIcon />} variant="text" disabled={!plan} onClick={jumpToday}>
         {tr('toolbar.today')}
       </Button>
+
+      {/* 关键路径开关（Q3-4，2026-09-08）：ToggleButton 独占式；开时叶子层显示红色下划线 + 甘特条下红线 */}
+      <Tooltip title={tr('toolbar.criticalPathHint')}>
+        <Button
+          size="small"
+          variant={criticalPathOn ? 'contained' : 'outlined'}
+          color={criticalPathOn ? 'error' : 'inherit'}
+          disabled={!plan}
+          onClick={toggleCriticalPath}
+          aria-pressed={criticalPathOn}
+          sx={{ ml: 0.5 }}
+        >
+          {tr('toolbar.criticalPath')}
+        </Button>
+      </Tooltip>
+
+      {/* 主题切换（2026-09-08）：三态 ToggleButtonGroup，互斥；图标 + 文字 tooltip */}
+      <Tooltip title={tr('toolbar.themeHint')}>
+        <ToggleButtonGroup
+          size="small"
+          exclusive
+          value={themeMode.mode}
+          onChange={(_e, v: ThemeMode | null) => v && themeMode.setMode(v)}
+          aria-label="theme-mode"
+          sx={{ ml: 1 }}
+        >
+          {themeButtons.map((b) => (
+            <ToggleButton key={b.value} value={b.value} aria-label={b.label} title={b.label}>
+              {b.icon}
+            </ToggleButton>
+          ))}
+        </ToggleButtonGroup>
+      </Tooltip>
     </div>
   );
 }

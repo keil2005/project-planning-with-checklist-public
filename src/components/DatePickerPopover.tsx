@@ -76,7 +76,7 @@ export default function DatePickerPopover({ anchorEl, open, value, calendar, onS
         </div>
 
         {/* 星期表头 */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', textAlign: 'center', color: '#94a3b8', marginBottom: 2 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', textAlign: 'center', color: 'var(--text-subtle)', marginBottom: 2 }}>
           {weekLabels().map((w) => (
             <div key={w} style={{ padding: '2px 0' }}>
               {w}
@@ -94,8 +94,8 @@ export default function DatePickerPopover({ anchorEl, open, value, calendar, onS
             const selected = value === iso;
             const label = calendar ? calendar.labelOf(iso) : null;
 
-            const bg = selected ? '#2563eb' : nonWorking ? '#fee2e2' : weekend ? '#f1f5f9' : '#fff';
-            const color = selected ? '#fff' : nonWorking ? '#b91c1c' : '#1f2937';
+            const bg = selected ? 'var(--primary)' : nonWorking ? 'var(--holiday)' : weekend ? 'var(--surface-2)' : 'var(--surface)';
+            const color = selected ? 'var(--text-on-primary)' : nonWorking ? 'var(--error)' : 'var(--text)';
 
             return (
               <button
@@ -107,7 +107,7 @@ export default function DatePickerPopover({ anchorEl, open, value, calendar, onS
                   onClose();
                 }}
                 style={{
-                  border: selected ? '1px solid #1d4ed8' : '1px solid transparent',
+                  border: selected ? '1px solid var(--primary-hover)' : '1px solid transparent',
                   borderRadius: 4,
                   background: bg,
                   color,
@@ -122,12 +122,12 @@ export default function DatePickerPopover({ anchorEl, open, value, calendar, onS
           })}
         </div>
 
-        <div style={{ marginTop: 6, fontSize: 11, color: '#94a3b8', display: 'flex', gap: 10 }}>
+        <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text-subtle)', display: 'flex', gap: 10 }}>
           <span>
-            <span style={{ display: 'inline-block', width: 10, height: 10, background: '#fee2e2', borderRadius: 2, verticalAlign: 'middle' }} /> {tr('cal.nonWorking')}
+            <span style={{ display: 'inline-block', width: 10, height: 10, background: 'var(--holiday)', borderRadius: 2, verticalAlign: 'middle' }} /> {tr('cal.nonWorking')}
           </span>
           <span>
-            <span style={{ display: 'inline-block', width: 10, height: 10, background: '#f1f5f9', borderRadius: 2, verticalAlign: 'middle' }} /> {tr('cal.weekend')}
+            <span style={{ display: 'inline-block', width: 10, height: 10, background: 'var(--surface-2)', borderRadius: 2, verticalAlign: 'middle' }} /> {tr('cal.weekend')}
           </span>
         </div>
       </div>

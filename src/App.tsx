@@ -61,8 +61,8 @@ function DiagnosticsBar(): JSX.Element | null {
       onClick={() => d.taskId && selectTask(d.taskId)}
       className={`mr-2 mb-1 inline-flex max-w-full items-center gap-1 rounded border px-2 py-[2px] text-left text-[12px] ${
         d.level === 'error'
-          ? 'border-red-300 bg-red-50 text-red-700 hover:bg-red-100'
-          : 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100'
+          ? 'border-[var(--error)] bg-[var(--error-soft)] text-error hover:bg-[var(--error-soft)]'
+          : 'border-[var(--warn)] bg-[var(--warn-soft)] text-warn hover:bg-[var(--warn-soft)]'
       }`}
       title={d.message}
     >
@@ -73,15 +73,15 @@ function DiagnosticsBar(): JSX.Element | null {
   );
 
   return (
-    <div className="border-b border-slate-200 bg-slate-50 px-3 py-1">
+    <div className="border-b border-border bg-surface-2 px-3 py-1">
       <div className="flex items-center gap-3">
-        <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-red-600">
+        <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-error">
           <ErrorOutlineIcon fontSize="inherit" /> {tr('diag.errors', { n: errors.length })}
         </span>
-        <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-amber-600">
+        <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-warn">
           <WarningAmberIcon fontSize="inherit" /> {tr('diag.warns', { n: warns.length })}
         </span>
-        <span className="text-[12px] text-slate-500">{tr('diag.hint')}</span>
+        <span className="text-[12px] text-text-muted">{tr('diag.hint')}</span>
         <div className="flex-1" />
         <IconButton onClick={() => setOpen((v) => !v)} title={open ? tr('diag.collapse') : tr('diag.expand')}>
           {open ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
@@ -132,7 +132,7 @@ function EmptyState(): JSX.Element {
   const user = useStore((s) => s.session.user);
   const tr = useT();
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-3 text-slate-500">
+    <div className="flex h-full flex-col items-center justify-center gap-3 text-text-muted">
       <div className="text-[15px]">{tr('empty.title')}</div>
       <div className="flex gap-2">
         <Button variant="contained" disabled={!user} onClick={() => openDialog('planPicker')}>
@@ -184,7 +184,7 @@ export default function App(): JSX.Element {
       {busy && <LinearProgress style={{ height: 2 }} />}
 
       {preview && (
-        <div className="flex items-center gap-2 border-b border-amber-300 bg-amber-50 px-3 py-1 text-[12px] text-amber-800">
+        <div className="flex items-center gap-2 border-b border-[var(--warn)] bg-[var(--warn-soft)] px-3 py-1 text-[12px] text-warn">
           <Chip size="small" color="warning" label={tr('preview.banner', { version: preview.version })} />
           <span className="truncate">
             {tr('preview.by', { editor: preview.editor, notes: preview.notes })}
@@ -206,7 +206,7 @@ export default function App(): JSX.Element {
             <Panel defaultSize={45} minSize={22}>
               <TaskTable scrollRef={leftScroll} onScroll={onLeftScroll} />
             </Panel>
-            <PanelResizeHandle className="w-[4px] cursor-col-resize bg-slate-200 transition-colors hover:bg-blue-400" />
+            <PanelResizeHandle className="w-[4px] cursor-col-resize bg-border transition-colors hover:bg-primary-hover" />
             <Panel defaultSize={55} minSize={22}>
               <GanttChart scrollRef={rightScroll} onScroll={onRightScroll} />
             </Panel>

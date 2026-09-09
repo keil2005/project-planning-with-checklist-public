@@ -5,6 +5,97 @@
 
 > **下一次发布**：[Unreleased] — Docker 一键部署 / 多项导出（详见 [IMPL_ROADMAP](./docs/IMPL_ROADMAP.md)）
 
+## [1.3.0] — 2026-09-09
+
+> 主线：排程语义升级（里程碑 + 关键路径 + FS+1）+ Light/Dark 双主题 + 白屏修复。
+> 4 个新功能 + 5 个修复 + 392+ 测试通过。
+
+### Added（功能）
+
+1. **里程碑（Milestone）** —— `duration=0` 表示关键节点
+   - `shared/datetime.ts`：`parseDuration` 接受 `0d / 0w / 0m`（拒绝负数仍生效）
+   - `shared/scheduler.ts`：新增 `isMilestone` 判定（用户显式 `0d` OR 收尾后 `start === end`），父任务恒 `false`（rollup 派生时间不参与）
+   - `shared/types.ts`：`TaskComputed.isMilestone: boolean` 字段
+   - `src/components/GanttChart.tsx`：里程碑渲染为实心圆（蓝/红配色随主题 + 关键路径双标识）
+   - **里程碑汇总行**：甘特图底部固定显示里程碑列表（"里程碑汇总（N）"），点击平移到对应日期
+
+2. **关键路径（Critical Path, CPM）**
+   - `shared/scheduler.ts`：`computeCriticalPath()` 实现经典 CPM（forward pass + backward pass）
+   - `src/store.ts`：`criticalPathOn` state + `toggleCriticalPath()` action
+   - `src/components/Toolbar.tsx`：工具栏新增「关键路径」ToggleButton + tooltip 说明
+   - `src/components/GanttChart.tsx`：关键任务渲染红下划线 + 图例 `gantt.legendCritical`
+   - **算法约束**：只算叶子；父任务不参与；里程碑 `slack=0` 时进关键路径；`localStorage.pg.criticalPath` 持久化
+
+3. **Light / Dark / System 三态主题**
+   - `src/theme.ts`（新增 4.6KB）：micro store + `useThemeMode()` hook + `matchMedia('(prefers-color-scheme: dark)')` 监听 OS 切换
+   - `src/index.css`：重写为 22 个 design token + `[data-theme='dark']` 完全覆盖
+   - `tailwind.config.js`：`theme.extend.colors` 全部映射 `var(--token)`，无 Tailwind slate 硬编码
+   - `src/main.tsx`：`buildMuiTheme(mode)` 切换真实 hex palette（light/dark 两套），MUI 组件随主题
+   - `src/components/Toolbar.tsx`：三态开关 `☀ / 🌙 / 🖥` + Tooltip 解释
+   - 持久化 `localStorage.pg.theme`（值：`light` / `dark` / `system`）
+
+4. **任务编辑交互细节**
+   - **Enter 键仅 commit**：单元格编辑后按 Enter 提交，不再新建下一行
+   - **驱动变量高亮**：start / end / duration / deps 四类单元格背景色标识（`isDriver` 判定）
+
+5. **i18n 新增 14 键**（CN + EN 各 7）
+   - `toolbar.criticalPath` / `toolbar.criticalPathHint`
+   - `toolbar.themeLight` / `themeDark` / `themeSystem` / `themeHint` + 短标签
+   - `task.placeholderDuration`：提示 `0d = 里程碑 / 5d / 2w / 1m`
+   - `task.parentLocked`：由子任务汇总
+   - `gantt.legendMilestone` / `legendCritical` / `milestoneTitle` / `milestoneSummary`
+
+### Fixed（修复）
+
+6. **FS 依赖 +1 工作日**（K3 端点式下严格"次日开始"）
+   - 前置 `2026-09-08` 完成 → 后置 `2026-09-09` 开始（旧版同天，重叠 1 天）
+   - `shared/scheduler.ts`：FS 用 `addDays(pc.end, 1)` 作锚；FF 同天结束合法不加；SS/SF 与 pred 共享端点
+   - 排程 #4 / #11 分支同步刷新；测试用例更新（`#8 仅时长 + FS 依赖 → FS+1`）
+
+7. **父任务字段硬禁**（修正版，前一版误锁子任务）
+   - `src/components/TaskTable.tsx`：`isLocked = isParent`（之前错用 `parentId !== null` 把子叶子也锁了 → 用户截图反馈"子任务无法编辑 duration"）
+   - 父任务时间 / duration / todo 全部 disable；子任务正常编辑
+
+8. **白屏修复**：MUI palette 不能再传 CSS 变量字符串
+   - **现象**：刷新页面后白屏，无任何控制台错误（MUI 把 var() 抛错吞掉了）
+   - **根因**：MUI 内部 `alpha(theme.palette.primary.main, 0.04)` → `decomposeColor('var(--primary)')` 抛 `Unsupported color` → React 根 render 崩
+   - **修复**：`palette.*` 全部用真实 hex（`#2563eb` / `#60a5fa` 等），dark 视觉由 `[data-theme='dark']` 调色
+   - **附带收益**：MUI 组件（Button / Chip / Popover / Dialog / Menu）真正跟随主题
+   - **教训**：MUI v5 的 `cssVariables: true` 是 silent no-op（该特性在 MUI v6 才正式 GA）
+
+9. **服务端保存同步**（duration=0 → 里程碑）
+   - **现象**：保存含里程碑的计划报 `[1008] Invalid duration: 时长必须大于 0，收到「0」`
+   - **根因**：`package.json` 的 `build` 引用 `./build-server-bundle.sh`，但该脚本在 `f1e0ad5` 公开版清理时被删除 → `npm run build` 只重打前端 dist、服务端 bundle 一直停在 16:19 旧版（`if (value <= 0)` 拒绝 0）
+   - **修复**：用 esbuild 从当前源码重打 `server-build/server.cjs`，新 bundle 用 `if (value < 0)` 允许 0
+   - **端到端验证**：保存含 2 个 duration=0 里程碑 → `code=0, msg=ok`，读回落盘 `input.duration="0"` 保留 ✅
+
+10. **SVG / hex 颜色全部 token 化**
+    - `src/components/GanttChart.tsx` 24 处 SVG hex → `var(--token)`
+    - `src/components/DatePickerPopover.tsx` / `ErrorBoundary.tsx` 同样迁移
+    - 主题切换时所有 SVG 元素颜色正确跟随
+
+### Tests
+
+11. `shared/__tests__/scheduler.test.ts` 新增 **2 个 describe / 9 个 it 用例**
+    - `datetime · duration=0 = milestone`（2 例）：接受 0d / 0w / 0m；仍拒绝负数
+    - `scheduler · milestone 调度`（3 例）：`start === end` 判里程碑；FS+1 后里程碑仍同天；父任务 `isMilestone=false`
+    - `scheduler · critical path（CPM）`（4 例）：链式 A→B→C 全关键；分叉 A→{B,C} 选长支；父任务不参与；里程碑 slack=0 进关键
+12. **全部 392+ 测试通过**（含 v1.2.1 baseline 383）
+13. `npm run build`：vite build 成功（22.42KB CSS / 687KB JS gzip）
+14. 端到端 API 验证（curl + `--noproxy '*'`）：保存 / 读回 / 编辑锁全链路 OK
+
+### Compatibility
+
+15. 数据 schema 不变；旧 plan.json 文件直接兼容
+16. `[data-theme]` 默认 `system`（首次刷新跟随 OS 外观切换）；`localStorage.pg.theme` 为 `system` 时响应 macOS / Windows 外观变更
+
+### Docs
+
+17. `.workbuddy/memory/2026-09-08.md` 工作日志沉淀：白屏根因 + `build-server-bundle.sh` 缺失教训 + MUI v5 cssVariables 静默失效
+18. `.workbuddy/memory/MEMORY.md`（长期）记录：MUI palette 禁忌 + 服务端 bundle 同步铁律
+
+---
+
 ## [1.2.1] — 2026-09-07
 
 ### Fixed
@@ -147,7 +238,9 @@
 
 ---
 
-[Unreleased]: https://github.com/keil2005/project-planning-with-checklist-public/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/keil2005/project-planning-with-checklist-public/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/keil2005/project-planning-with-checklist-public/compare/v1.2.1...v1.3.0
+[1.2.1]: https://github.com/keil2005/project-planning-with-checklist-public/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/keil2005/project-planning-with-checklist-public/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/keil2005/project-planning-with-checklist-public/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/keil2005/project-planning-with-checklist-public/compare/v1.0.0...v1.1.0
