@@ -3,9 +3,8 @@
  *
  * MUI ThemeProvider + CssBaseline（Tailwind 已关闭 preflight，两者不冲突）。
  *
- * v1.2.1 (2026-09-08)：light/dark 双主题。MUI palette 跟随 useThemeMode() 切换；
- * CSS 变量在 :root / [data-theme='dark'] 下定义（见 src/index.css）。
- * <html data-theme> 由 src/theme.ts 设置，本文件仅读取 resolved 决定 palette.mode。
+ * v1.3.1 (2026-09-10) 优雅版：light/dark 双主题切到 indigo 品牌色；
+ * 字体接入 Inter（web fallback）；按钮圆角 8px；MuiButton 默认 disableElevation 已开。
  */
 
 import React from 'react';
@@ -26,53 +25,62 @@ import { useThemeMode } from './theme';
  *     CSS 变量（[data-theme=dark]）。
  *   - 注：MUI v5.18 的 createTheme 暂不支持 cssVariables:true（GA 在 v6），
  *     所以不再使用该 flag。
+ *
+ * v1.3.1：品牌色从 blue-600 切到 indigo-600（#4f46e5），更柔和现代。
  */
 function buildMuiTheme(mode: 'light' | 'dark'): Theme {
   return createTheme({
     palette: {
       mode,
-      // light 模式 hex
+      // light 模式 hex —— indigo 调色板
       ...(mode === 'light' && {
-        primary: { main: '#2563eb', contrastText: '#ffffff' },
+        primary: { main: '#4f46e5', contrastText: '#ffffff' },
         error: { main: '#dc2626' },
         warning: { main: '#d97706' },
-        success: { main: '#16a34a' },
-        background: { default: '#ffffff', paper: '#ffffff' },
+        success: { main: '#10b981' },
+        background: { default: '#f5f7fb', paper: '#ffffff' },
         text: { primary: '#0f172a', secondary: '#475569', disabled: '#94a3b8' },
-        divider: '#e2e8f0',
+        divider: 'rgba(15, 23, 42, 0.08)',
         action: {
           active: '#475569',
-          hover: 'rgba(15, 23, 42, 0.04)',
-          selected: 'rgba(37, 99, 235, 0.08)',
+          hover: 'rgba(79, 70, 229, 0.06)',
+          selected: 'rgba(79, 70, 229, 0.1)',
           disabled: 'rgba(15, 23, 42, 0.26)',
-          disabledBackground: 'rgba(15, 23, 42, 0.12)',
-          focus: 'rgba(37, 99, 235, 0.12)',
+          disabledBackground: 'rgba(15, 23, 42, 0.06)',
+          focus: 'rgba(79, 70, 229, 0.12)',
         },
       }),
-      // dark 模式 hex（与 CSS 变量 [data-theme=dark] 一致）
+      // dark 模式 hex —— 与 CSS 变量 [data-theme=dark] 一致
       ...(mode === 'dark' && {
-        primary: { main: '#60a5fa', contrastText: '#0f172a' },
+        primary: { main: '#818cf8', contrastText: '#0b1020' },
         error: { main: '#f87171' },
         warning: { main: '#fbbf24' },
         success: { main: '#4ade80' },
-        background: { default: '#0f172a', paper: '#1e293b' },
+        background: { default: '#0b1020', paper: '#1f2937' },
         text: { primary: '#e2e8f0', secondary: '#94a3b8', disabled: '#64748b' },
-        divider: '#334155',
+        divider: 'rgba(226, 232, 240, 0.08)',
         action: {
           active: '#94a3b8',
-          hover: 'rgba(226, 232, 240, 0.08)',
-          selected: 'rgba(96, 165, 250, 0.18)',
+          hover: 'rgba(129, 140, 248, 0.1)',
+          selected: 'rgba(129, 140, 248, 0.2)',
           disabled: 'rgba(148, 163, 184, 0.4)',
-          disabledBackground: 'rgba(148, 163, 184, 0.16)',
-          focus: 'rgba(96, 165, 250, 0.2)',
+          disabledBackground: 'rgba(148, 163, 184, 0.1)',
+          focus: 'rgba(129, 140, 248, 0.24)',
         },
       }),
     },
     typography: {
       fontSize: 13,
       fontFamily:
-        '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", Roboto, Helvetica, Arial, sans-serif',
-      button: { textTransform: 'none' },
+        '-apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", "PingFang SC", "Microsoft YaHei", Roboto, Helvetica, Arial, sans-serif',
+      button: { textTransform: 'none', fontWeight: 500 },
+      h1: { fontSize: '1.5rem', fontWeight: 600, letterSpacing: '-0.02em' },
+      h2: { fontSize: '1.25rem', fontWeight: 600, letterSpacing: '-0.01em' },
+      h3: { fontSize: '1.0625rem', fontWeight: 600 },
+      h4: { fontSize: '1rem', fontWeight: 600 },
+    },
+    shape: {
+      borderRadius: 8,
     },
     components: {
       MuiButton: { defaultProps: { size: 'small', disableElevation: true } },
@@ -80,6 +88,26 @@ function buildMuiTheme(mode: 'light' | 'dark'): Theme {
       MuiTooltip: { defaultProps: { arrow: true, enterDelay: 300 } },
       MuiTextField: { defaultProps: { size: 'small' } },
       MuiSelect: { defaultProps: { size: 'small' } },
+      MuiPaper: {
+        styleOverrides: {
+          rounded: { borderRadius: 12 },
+        },
+      },
+      MuiDialog: {
+        styleOverrides: {
+          paper: { borderRadius: 16 },
+        },
+      },
+      MuiChip: {
+        styleOverrides: {
+          root: { borderRadius: 6, fontWeight: 500 },
+        },
+      },
+      MuiToggleButton: {
+        styleOverrides: {
+          root: { borderRadius: 6, textTransform: 'none', padding: '4px 10px' },
+        },
+      },
     },
   });
 }

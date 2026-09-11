@@ -12,7 +12,6 @@
 import { useMemo, useRef, useState } from 'react';
 import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
-import Divider from '@mui/material/Divider';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
 import ToggleButton from '@mui/material/ToggleButton';
@@ -94,15 +93,15 @@ export default function Toolbar(): JSX.Element {
   const saveDisabled = !canEdit || !dirty || hasError || busy;
 
   return (
-    <div className="flex flex-wrap items-center gap-2 border-b border-border-strong bg-surface px-3 py-[6px]">
+    <div className="pg-toolbar">
       {/* 计划名 + 版本 */}
       <div className="flex min-w-0 items-center gap-2">
-        <span className="truncate text-[14px] font-semibold">{plan ? plan.name : tr('toolbar.noPlan')}</span>
-        {plan && <Chip size="small" variant="outlined" label={`v${plan.version}`} />}
+        <span className="pg-toolbar__title truncate">{plan ? plan.name : tr('toolbar.noPlan')}</span>
+        {plan && <Chip size="small" variant="outlined" className="pg-num" label={`v${plan.version}`} />}
         {dirty && <Chip size="small" color="warning" label={tr('toolbar.dirty')} />}
       </div>
 
-      <Divider orientation="vertical" flexItem />
+      <span className="pg-toolbar__divider" />
 
       {/* 身份 */}
       <Tooltip title={authed ? tr('toolbar.userTooltipAuthed') : tr('toolbar.userTooltipGuest')}>
@@ -129,7 +128,7 @@ export default function Toolbar(): JSX.Element {
         </Tooltip>
       )}
 
-      <Divider orientation="vertical" flexItem />
+      <span className="pg-toolbar__divider" />
 
       {/* 编辑锁 */}
       <Tooltip
@@ -205,7 +204,7 @@ export default function Toolbar(): JSX.Element {
         {tr('toolbar.refresh')}
       </Button>
 
-      <Divider orientation="vertical" flexItem />
+      <span className="pg-toolbar__divider" />
 
       {/* 导出 */}
       <Button
@@ -260,7 +259,7 @@ export default function Toolbar(): JSX.Element {
 
       {/* 语言切换 */}
       <Tooltip title={tr('toolbar.langTooltip')}>
-        <Button startIcon={<TranslateIcon />} variant="text" onClick={toggleLang}>
+        <Button startIcon={<TranslateIcon />} variant="text" onClick={toggleLang} sx={{ minWidth: 56 }}>
           {langLabel(lang)}
         </Button>
       </Tooltip>
@@ -271,6 +270,12 @@ export default function Toolbar(): JSX.Element {
         exclusive
         value={zoom}
         onChange={(_e, v: ZoomLevel | null) => v && setZoom(v)}
+        sx={{
+          '& .MuiToggleButton-root': {
+            px: 1.25,
+            fontSize: 12,
+          },
+        }}
       >
         <ToggleButton value="day">{tr('toolbar.zoomDay')}</ToggleButton>
         <ToggleButton value="week">{tr('toolbar.zoomWeek')}</ToggleButton>
@@ -280,7 +285,7 @@ export default function Toolbar(): JSX.Element {
         {tr('toolbar.today')}
       </Button>
 
-      {/* 关键路径开关（Q3-4，2026-09-08）：ToggleButton 独占式；开时叶子层显示红色下划线 + 甘特条下红线 */}
+      {/* 关键路径开关（Q3-4，2026-09-08）：开时叶子层显示红色下划线 + 甘特条下红线 */}
       <Tooltip title={tr('toolbar.criticalPathHint')}>
         <Button
           size="small"
@@ -289,7 +294,14 @@ export default function Toolbar(): JSX.Element {
           disabled={!plan}
           onClick={toggleCriticalPath}
           aria-pressed={criticalPathOn}
-          sx={{ ml: 0.5 }}
+          sx={{
+            ml: 0.5,
+            fontWeight: 600,
+            minWidth: 92,
+            ...(criticalPathOn && {
+              boxShadow: '0 4px 12px rgba(239, 68, 68, 0.32)',
+            }),
+          }}
         >
           {tr('toolbar.criticalPath')}
         </Button>

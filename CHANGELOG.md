@@ -5,6 +5,63 @@
 
 > **下一次发布**：[Unreleased] — Docker 一键部署 / 多项导出（详见 [IMPL_ROADMAP](./docs/IMPL_ROADMAP.md)）
 
+## [1.4.0] — 2026-09-11
+
+> 主线：**UI 优雅版**（indigo 品牌色 + 设计令牌体系 + 双主题精修）+ **首次启动默认登录凭据自动可用**。
+> 1 个新功能（UI 大改）+ 1 个修复（文档与代码不一致）+ 3 个 i18n 键。**程序逻辑零改动**。
+
+### 🔐 默认登录凭据（重要！请先读这一段）
+
+| 角色 | 用户名 | 密码 |
+|---|---|---|
+| 管理员 (admin) | `admin` | `admin12345` |
+
+- **首次启动时**，`start.command` / `start.bat` 会自动注入 `ADMIN_USER=admin` / `ADMIN_PASSWORD=admin12345`；若 `DATA_DIR/auth/users.json` 为空，会创建该 admin 账号 + 演示 workspace + 演示计划
+- **环境变量优先**：启动前执行 `export ADMIN_USER=xxx` 或 `set ADMIN_USER=xxx` 可覆盖默认用户名/密码
+- **忘记本地密码**：
+  1. 停止服务，删除 `DATA_DIR/auth/users.json`（如 `./data/auth/users.json`）
+  2. 重启服务，会按启动脚本默认重新创建 `admin` / `admin12345`
+  3. 登录后立即进入「设置 → 账号」改密
+- **生产部署建议**：务必在启动前通过 `ADMIN_PASSWORD` 环境变量覆盖默认密码，并在部署文档中记录
+
+### Added（功能）
+
+1. **UI 优雅版** — 全套 17 项视觉升级
+   - 品牌色 blue → **indigo**（浅色 `#4f46e5` / 深色 `#818cf8`）
+   - 圆角体系 6/10/12/16px + 三级阴影 (`--shadow-xs/md/lg/xl`) + 三层背景 (`--bg/surface/surface-3`)
+   - 8% 透明边框取代硬线，颜色统一从 `slate-900/15`
+   - 字体抗锯齿 + OpenType 数字等宽 (`font-feature-settings: 'tnum'`) + 表头小写字距化
+   - 行 hover 高亮、sticky 表头分层投影、**毛玻璃 sticky 工具栏**（`backdrop-filter: saturate(1.8) blur(20px)`）
+   - MUI 全局 styleOverrides（Button/Dialog/Menu/Chip/IconButton/ToggleButton）
+   - 主按钮渐变背景 + `:active` 缩放反馈
+   - 诊断条 pill/chip 化（`max-height: 56px` 滚动区）
+   - 空状态重做（渐变图标块 + 双 CTA + 副标题）
+   - 甘特条 SVG 渐变填充（普通/关键/汇总三套）+ 投影 filter
+   - 面板拖拽手柄 hover 指示灯
+   - 涉及：`src/index.css`（+702 行净增，核心设计令牌）、`src/main.tsx`（MUI 主题切到 indigo，palette 全用真实 hex）、`src/components/GanttChart.tsx`、`src/components/Toolbar.tsx`、`src/App.tsx`、`src/i18n.tsx`
+
+2. **首次启动默认登录凭据自动可用**（修复文档与代码不一致）
+   - 启动脚本 `start.command` / `start.bat` 在未设置 `ADMIN_USER` / `ADMIN_PASSWORD` 环境变量时，自动注入默认值 `admin` / `admin12345`
+   - 环境变量仍然优先（启动前 `export ADMIN_USER=xxx` 即可覆盖）
+   - 修复了 README 一直承诺但代码未兑现的「首次启动自动建 admin 账号」行为
+   - 涉及：`start.command`、`start.bat`
+
+3. **i18n 新增 3 键**（CN + EN）
+   - `empty.newPlan` / `empty.subtitleAuthed` / `empty.subtitleGuest`
+
+### Fixed（修复）
+
+4. **文档/代码不一致** — 旧版 `bootstrap.ts` 仅在带 env 时建 admin，且启动脚本未注入，导致新用户克隆后无任何账号。v1.4.0 通过启动脚本注入默认 env 修复（见上文 Added #2）
+
+### Verification
+
+- `npm test` → **392 / 392 通过**
+- `vite build` → ✓ JS 691KB / CSS 31KB
+- Playwright e2e（登录 → 开计划 → 浅色 → 深色 → 行 hover）→ 0 page errors
+- 计算样式采样：浅色 `--bg #f5f7fb` / `--primary #4f46e5`；深色 `--bg #0b1020` / `--primary #818cf8`
+- 像素均值校验：浅色 246.8 / 深色 33.3
+- 双主题 PNG 截图对比见 `.workbuddy/artifacts/ui-*.png`
+
 ## [1.3.0] — 2026-09-09
 
 > 主线：排程语义升级（里程碑 + 关键路径 + FS+1）+ Light/Dark 双主题 + 白屏修复。

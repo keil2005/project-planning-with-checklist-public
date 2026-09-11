@@ -3,6 +3,9 @@
  *
  * 结构：Toolbar → 诊断条 → 左右可拖拽分栏（表格 / 甘特）→ 对话框 → Snackbar。
  * 左右两个滚动容器的 scrollTop 严格同步（K16：ROW_H 一致 + 单一逻辑滚动位置）。
+ *
+ * v1.3.1 (2026-09-10) 优雅版：诊断条改扁平卡片式；空态加插画 + 双 CTA；
+ * preview 条扁平化；分栏分隔条 hover 提示。
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -17,6 +20,9 @@ import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
+import EventNoteIcon from '@mui/icons-material/EventNote';
+import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
+import AddIcon from '@mui/icons-material/Add';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { AuthGate } from './components/AuthGate';
 import Dialogs from './components/Dialogs';
@@ -59,36 +65,32 @@ function DiagnosticsBar(): JSX.Element | null {
       key={`${d.code}-${d.taskId ?? ''}-${i}`}
       type="button"
       onClick={() => d.taskId && selectTask(d.taskId)}
-      className={`mr-2 mb-1 inline-flex max-w-full items-center gap-1 rounded border px-2 py-[2px] text-left text-[12px] ${
-        d.level === 'error'
-          ? 'border-[var(--error)] bg-[var(--error-soft)] text-error hover:bg-[var(--error-soft)]'
-          : 'border-[var(--warn)] bg-[var(--warn-soft)] text-warn hover:bg-[var(--warn-soft)]'
-      }`}
+      className={`pg-diagnostics__chip pg-diagnostics__chip--${d.level}`}
       title={d.message}
     >
-      <span className="font-semibold">{seqOf(d.taskId)}</span>
-      <span className="opacity-70">[{d.code}]</span>
-      <span className="truncate">{errLabel(d.code)}：{d.message}</span>
+      <span className="pg-num font-semibold">{seqOf(d.taskId)}</span>
+      <span className="pg-diagnostics__chip-code">[{d.code}]</span>
+      <span className="pg-diagnostics__chip-msg">{errLabel(d.code)}：{d.message}</span>
     </button>
   );
 
   return (
-    <div className="border-b border-border bg-surface-2 px-3 py-1">
-      <div className="flex items-center gap-3">
-        <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-error">
-          <ErrorOutlineIcon fontSize="inherit" /> {tr('diag.errors', { n: errors.length })}
+    <div className="pg-diagnostics">
+      <div className="flex items-center gap-2">
+        <span className="pg-diagnostics__pill pg-diagnostics__pill--error">
+          <ErrorOutlineIcon sx={{ fontSize: 14 }} /> {tr('diag.errors', { n: errors.length })}
         </span>
-        <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-warn">
-          <WarningAmberIcon fontSize="inherit" /> {tr('diag.warns', { n: warns.length })}
+        <span className="pg-diagnostics__pill pg-diagnostics__pill--warn">
+          <WarningAmberIcon sx={{ fontSize: 14 }} /> {tr('diag.warns', { n: warns.length })}
         </span>
-        <span className="text-[12px] text-text-muted">{tr('diag.hint')}</span>
+        <span className="pg-diagnostics__hint">{tr('diag.hint')}</span>
         <div className="flex-1" />
-        <IconButton onClick={() => setOpen((v) => !v)} title={open ? tr('diag.collapse') : tr('diag.expand')}>
+        <IconButton size="small" onClick={() => setOpen((v) => !v)} title={open ? tr('diag.collapse') : tr('diag.expand')}>
           {open ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
         </IconButton>
       </div>
       <Collapse in={open}>
-        <div className="max-h-24 overflow-auto pt-1">
+        <div className="pg-diagnostics__items">
           {errors.map(renderItem)}
           {warns.map(renderItem)}
         </div>
@@ -125,21 +127,44 @@ function CalendarBanner(): JSX.Element | null {
   );
 }
 
-/* ============================ 空态 ============================ */
+/* ============================ 空态（v1.3.1 优雅版） ============================ */
 
 function EmptyState(): JSX.Element {
   const openDialog = useStore((s) => s.openDialog);
   const user = useStore((s) => s.session.user);
   const tr = useT();
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-3 text-text-muted">
-      <div className="text-[15px]">{tr('empty.title')}</div>
-      <div className="flex gap-2">
-        <Button variant="contained" disabled={!user} onClick={() => openDialog('planPicker')}>
+    <div className="pg-empty">
+      <div className="pg-empty__icon">
+        <EventNoteIcon sx={{ fontSize: 36 }} />
+      </div>
+      <div>
+        <div className="pg-empty__title">{tr('empty.title')}</div>
+        <div className="pg-empty__subtitle">
+          {user
+            ? tr('empty.subtitleAuthed')
+            : tr('empty.subtitleGuest')}
+        </div>
+      </div>
+      <div className="pg-empty__actions">
+        <Button
+          variant="contained"
+          startIcon={<RocketLaunchIcon />}
+          disabled={!user}
+          onClick={() => openDialog('planPicker')}
+        >
           {tr('empty.openPlan')}
         </Button>
+        <Button
+          variant="outlined"
+          startIcon={<AddIcon />}
+          disabled={!user}
+          onClick={() => openDialog('planPicker')}
+        >
+          {tr('empty.newPlan')}
+        </Button>
       </div>
-      {!user && <div className="text-[12px]">{tr('empty.pickUserFirst')}</div>}
+      {!user && <div className="text-[12px] text-[var(--text-subtle)]">{tr('empty.pickUserFirst')}</div>}
     </div>
   );
 }
@@ -184,7 +209,7 @@ export default function App(): JSX.Element {
       {busy && <LinearProgress style={{ height: 2 }} />}
 
       {preview && (
-        <div className="flex items-center gap-2 border-b border-[var(--warn)] bg-[var(--warn-soft)] px-3 py-1 text-[12px] text-warn">
+        <div className="pg-preview">
           <Chip size="small" color="warning" label={tr('preview.banner', { version: preview.version })} />
           <span className="truncate">
             {tr('preview.by', { editor: preview.editor, notes: preview.notes })}
@@ -206,7 +231,7 @@ export default function App(): JSX.Element {
             <Panel defaultSize={45} minSize={22}>
               <TaskTable scrollRef={leftScroll} onScroll={onLeftScroll} />
             </Panel>
-            <PanelResizeHandle className="w-[4px] cursor-col-resize bg-border transition-colors hover:bg-primary-hover" />
+            <PanelResizeHandle className="pg-resize-handle" />
             <Panel defaultSize={55} minSize={22}>
               <GanttChart scrollRef={rightScroll} onScroll={onRightScroll} />
             </Panel>

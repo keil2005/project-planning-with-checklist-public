@@ -17,6 +17,14 @@ PORT="${PORT:-3001}"
 LOG=/tmp/project-planning-with-checklist.log
 PIDF=/tmp/project-planning-with-checklist.pid
 
+# ---------------------------------------------------------------------------
+# 默认凭据：首次启动时若未通过环境变量指定 admin，则注入 README 公开的默认值
+# 想要覆盖：export ADMIN_USER=xxx; export ADMIN_PASSWORD=yyy; ./start.command
+# 安全提示：部署到生产前务必覆盖默认密码！
+# ---------------------------------------------------------------------------
+export ADMIN_USER="${ADMIN_USER:-admin}"
+export ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin12345}"
+
 # 找 node：PATH 优先，其次常见位置
 NODE_BIN="$(command -v node 2>/dev/null || true)"
 if [ -z "$NODE_BIN" ]; then

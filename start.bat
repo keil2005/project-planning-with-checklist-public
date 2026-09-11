@@ -72,6 +72,14 @@ if /i "%~1"=="stop" goto :do_stop
 if /i "%~1"=="status" goto :do_status
 
 REM ---------------------------------------------------------------------------
+REM 0.5) 默认凭据：首次启动时若未通过环境变量指定 admin，则注入 README 公开的默认值
+REM      想要覆盖：set ADMIN_USER=xxx ^& set ADMIN_PASSWORD=yyy ^& start.bat
+REM      安全提示：部署到生产前务必覆盖默认密码！
+REM ---------------------------------------------------------------------------
+if not defined ADMIN_USER set "ADMIN_USER=admin"
+if not defined ADMIN_PASSWORD set "ADMIN_PASSWORD=admin12345"
+
+REM ---------------------------------------------------------------------------
 REM 1) 检查端口是否已占用
 REM ---------------------------------------------------------------------------
 powershell -NoProfile -Command "$c=New-Object Net.Sockets.TcpClient;try{$c.Connect('127.0.0.1',$env:PORT);$c.Close();exit 0}catch{exit 1}" >nul 2>nul

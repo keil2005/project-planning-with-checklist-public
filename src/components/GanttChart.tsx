@@ -53,6 +53,8 @@ const TAIL_ROWS = 3;
 /* SVG 颜色 token（CSS 变量；浏览器解析 SVG fill/stroke 中的 var()） */
 const COLOR = {
   bar: 'var(--bar)',
+  /** v1.3.1 优雅版：bar 内部高光（渐变端） */
+  barHi: 'var(--bar-hi)',
   barStroke: 'var(--bar-stroke)',
   barError: 'var(--error)',
   summary: 'var(--summary)',
@@ -456,6 +458,20 @@ export default function GanttChart({ scrollRef, onScroll }: GanttChartProps): JS
           {/* ---------------- 图形主体 ---------------- */}
           <svg className="pg-gantt-svg" width={totalWidth} height={bodyHeight}>
             <defs>
+              {/* 任务条渐变（v1.3.1 优雅版：上下渐变体现高度感） */}
+              <linearGradient id="pg-bar-grad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={COLOR.barHi} stopOpacity="0.95" />
+                <stop offset="100%" stopColor={COLOR.bar} stopOpacity="1" />
+              </linearGradient>
+              <linearGradient id="pg-bar-critical-grad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#fb7185" stopOpacity="0.95" />
+                <stop offset="100%" stopColor={COLOR.critical} stopOpacity="1" />
+              </linearGradient>
+              <linearGradient id="pg-bar-summary-grad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#94a3b8" stopOpacity="0.9" />
+                <stop offset="100%" stopColor={COLOR.summary} stopOpacity="1" />
+              </linearGradient>
+              {/* 依赖箭头 */}
               <marker id="pg-arrow" viewBox="0 0 8 8" refX={7} refY={4} markerWidth={7} markerHeight={7} orient="auto">
                 <path d="M0 0 L8 4 L0 8 z" fill={COLOR.link} />
               </marker>
@@ -470,6 +486,18 @@ export default function GanttChart({ scrollRef, onScroll }: GanttChartProps): JS
               >
                 <path d="M0 0 L8 4 L0 8 z" fill={COLOR.linkErr} />
               </marker>
+              {/* bar 投影滤镜（柔和高斯）—— 用 sRGB 避免 linearRGB 偏色 */}
+              <filter id="pg-bar-shadow" x="-10%" y="-30%" width="120%" height="160%" colorInterpolationFilters="sRGB">
+                <feGaussianBlur in="SourceAlpha" stdDeviation="0.6" />
+                <feOffset dx="0" dy="0.8" result="offsetblur" />
+                <feComponentTransfer>
+                  <feFuncA type="linear" slope="0.18" />
+                </feComponentTransfer>
+                <feMerge>
+                  <feMergeNode />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
             </defs>
 
             {/* 周末底色 */}
@@ -580,7 +608,7 @@ export default function GanttChart({ scrollRef, onScroll }: GanttChartProps): JS
                 ].join(' ');
                 return (
                   <g key={t.id} className="pg-bar" onMouseEnter={onEnter} onClick={() => selectTask(t.id)}>
-                    <path d={d} fill={COLOR.summary} stroke={hasErr ? COLOR.barError : COLOR.summary} />
+                    <path d={d} fill="url(#pg-bar-summary-grad)" stroke={hasErr ? COLOR.barError : COLOR.summary} strokeWidth={1} filter="url(#pg-bar-shadow)" />
                     {/* 关键路径下划线（父任务不参与 CPM，但视觉同步显示父任务是否跨越关键子任务——简单起见父任务不加） */}
                     <text x={x + w + 6} y={cy + 4} style={{ fontSize: 11, fontWeight: 600 }}>
                       <tspan>{t.name}</tspan>
@@ -644,10 +672,11 @@ export default function GanttChart({ scrollRef, onScroll }: GanttChartProps): JS
                     height={BAR_H}
                     rx={3}
                     ry={3}
-                    fill={COLOR.bar}
-                    fillOpacity={0.9}
-                    stroke={hasErr ? COLOR.barError : COLOR.barStroke}
-                    strokeWidth={hasErr ? 1.6 : 0.8}
+                    fill={isCritical ? 'url(#pg-bar-critical-grad)' : 'url(#pg-bar-grad)'}
+                    fillOpacity={0.95}
+                    stroke={hasErr ? COLOR.barError : isCritical ? COLOR.critical : COLOR.barStroke}
+                    strokeWidth={hasErr ? 1.6 : isCritical ? 1.2 : 0.8}
+                    filter="url(#pg-bar-shadow)"
                   />
                   {/* 关键路径下划线（Q3）：bar 下方 2px 红线，跨越整条形 */}
                   {isCritical && (
@@ -728,6 +757,7 @@ export default function GanttChart({ scrollRef, onScroll }: GanttChartProps): JS
                         fill={COLOR.milestone}
                         stroke={COLOR.milestoneStroke}
                         strokeWidth={1.4}
+                        filter="url(#pg-bar-shadow)"
                       />
                       {isCrit && (
                         <line

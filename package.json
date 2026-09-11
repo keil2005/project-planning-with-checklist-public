@@ -2,7 +2,7 @@
   "name": "project-planning-with-checklist",
   "displayName": "Project Planning with Checklist",
   "private": true,
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "轻量协作式项目计划工具：甘特图 + 任务验收清单 + 团队花名册（单页 Web App + Node 中心化服务 + 文件型 JSON 存储）",
   "license": "Apache-2.0",
   "author": {

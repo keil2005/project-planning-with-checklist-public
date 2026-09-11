@@ -38,7 +38,17 @@
 
 启动后浏览器打开 <http://localhost:3001>。
 
-第一次启动会自动建一个 admin 账号（用户名 = `admin`，密码 = `admin12345`），并塞入一个**玩具赛车产品开发**示例计划供你点着玩。
+第一次启动会由 `start.command` / `start.bat` 自动注入默认凭据（`admin` / `admin12345`），并塞入一个**玩具赛车产品开发**示例计划供你点着玩。**首次启动后请立刻在「设置 → 账号」改密**（见下方「忘记密码怎么办」）。
+
+### 忘记密码怎么办
+
+三种方式按需取一：
+
+1. **临时重置（保留数据）** — 停服务 → 删除 `DATA_DIR/auth/users.json`（默认 `./data/auth/users.json`）→ 重启服务，会按启动脚本默认重新创建 `admin` / `admin12345`；其他 workspace / 计划 / 邀请链接不受影响
+2. **环境变量预设** — 启动前 `export ADMIN_USER=xxx`（macOS/Linux）或 `set ADMIN_USER=xxx`（Windows）覆盖默认；启动后首个用户即获得 admin 角色
+3. **重置全部数据** — 备份后删除整个 `DATA_DIR` 目录，重启会从零开始自举 + 注入演示计划
+
+> 不会丢失业务数据的「在线改密」接口暂未提供（v1.4.0 范围外）；如急需可通过「管理后台 → 用户列表 → 重置密码」按钮（计划中，见 [IMPL_ROADMAP](./docs/IMPL_ROADMAP.md)）。
 
 ## 主要功能
 
