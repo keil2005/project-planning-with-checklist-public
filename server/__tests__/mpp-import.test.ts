@@ -70,7 +70,7 @@ describe('toPlan 字段映射', () => {
   });
 
   it('normalizePlan 后树形连续化 + seq 重排', () => {
-    const plan = normalizePlan({ schemaVersion: 1, planId: '', name, version: 0, createdAt: '', updatedAt: '', updatedBy: '', nextTaskSeq: tasks.length + 1, calendar: { mode: 'NATURAL', anchorDate: '2026-10-01', defaultDuration: '1d' }, tasks } as Plan);
+    const plan = normalizePlan({ schemaVersion: 2, planId: '', name, version: 0, createdAt: '', updatedAt: '', updatedBy: '', nextTaskSeq: tasks.length + 1, calendar: { mode: 'NATURAL', anchorDate: '2026-10-01', defaultDuration: '1d' }, tasks } as Plan);
     // 父任务必须紧邻其子任务之前
     const ids = plan.tasks.map((t) => t.id);
     expect(ids.indexOf('T-0001')).toBeLessThan(ids.indexOf('T-0002'));

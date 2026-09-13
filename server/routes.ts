@@ -18,6 +18,7 @@ import {
   ErrCode,
   NATURAL_CALENDAR,
   NOTES_MAX_LEN,
+  SCHEMA_VERSION,
   httpStatusOf,
   isDomainError,
   type ApiResp,
@@ -262,7 +263,7 @@ export function createApiRouter(): Router {
       const normalized = normalizePlan({
         ...incomingWithFreshTodos,
         planId,
-        schemaVersion: 1,
+        schemaVersion: SCHEMA_VERSION,
         createdAt: current.createdAt,
         version: current.version,
       });
@@ -335,7 +336,7 @@ export function createApiRouter(): Router {
         ...target.planSnapshot,
         tasks: target.planSnapshot.tasks.map((t) => ({ ...t, todos: latestByTask[t.id] ?? [] })),
         planId,
-        schemaVersion: 1,
+        schemaVersion: SCHEMA_VERSION,
         createdAt: current.createdAt,
         version: current.version,
       });

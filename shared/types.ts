@@ -229,7 +229,8 @@ export const NATURAL_CALENDAR: WorkCalendar = {
 };
 
 export interface Plan {
-  schemaVersion: 1;
+  /** v1.4.1 起为 2；v1.4.0 及之前落盘为 1。normalizePlan 自动向上兼容。 */
+  schemaVersion: 2;
   /** 'p-20260826-113821-a7f3' */
   planId: string;
   name: string;
@@ -243,6 +244,17 @@ export interface Plan {
   calendar: CalendarConfig;
   /** 数组顺序 == 显示顺序 */
   tasks: Task[];
+  /**
+   * v1.4.1+ 团队注册表（v1.4.1 引入）。缺失/旧 plan 由 normalizePlan 兜底为 `[]`。
+   * 团队仅作为「人」的容器，不进任务结构。
+   */
+  teams?: Team[];
+  /**
+   * v1.4.1+ 人员注册表（v1.4.1 引入）。缺失/旧 plan 兜底为 `[]`。
+   * 任务 owner / consultant 仍以 string[] 形式存（向前兼容旧计划与外部导出），
+   * 本表只是「带元数据（性别/团队）」的展示增强来源。
+   */
+  people?: Person[];
 }
 
 export interface PlanMeta {
@@ -268,6 +280,7 @@ export interface VersionEntry extends VersionMeta {
 }
 
 export interface HistoryFile {
+  /** 历史文件 schema 与 Plan 独立演进，当前为 1（即使 Plan 升到 2 也不受影响） */
   schemaVersion: 1;
   planId: string;
   versions: VersionEntry[];
@@ -522,8 +535,66 @@ export const DEFAULT_DURATION_TEXT = '1d';
 /** notes 长度上限（K12） */
 export const NOTES_MAX_LEN = 500;
 
-/** 落盘 schema 版本（K17） */
-export const SCHEMA_VERSION = 1 as const;
+/**
+ * 人员条目（v1.4.1+，随 schemaVersion 2 引入）
+ *
+ * 设计要点：
+ *  - id 用稳定 ID（落盘 + 跨行引用），name 仅作展示；
+ *  - gender 三态：`'male' | 'female' | undefined`，未指定 = 不渲染任何 tag；
+ *  - teamIds 多团队：一个人可同时属于多个团队（如「硬件组」+ 「夜班小组」），
+ *    渲染时按 teamIds 顺序展示团队 chip；团队删除时**不联动删除人**，
+ *    仅把对应 id 从 teamIds 中过滤掉（orphan 处理：参见 normalizePlan）。
+ */
+export interface Person {
+  /** 稳定 ID，落盘用；由 normalizePlan 遇空时分配 `p_<seq>` */
+  id: string;
+  /** 展示名；同一 plan 内去重（大小写不敏感，参见 normalizePlan） */
+  name: string;
+  /** 性别：仅两种枚举；不指定 = 不渲染 tag（保守） */
+  gender?: 'male' | 'female';
+  /** 所属团队 ID 列表；可空数组；非法 ID 会被 normalizePlan 过滤 */
+  teamIds: string[];
+}
+
+/**
+ * 团队条目（v1.4.1+ 引入）
+ *
+ * 设计要点：
+ *  - id 稳定 ID（落盘用）；
+ *  - color 形如 `#rrggbb`，仅作 chip 背景；提供 6 色默认调色板（参见 TEAM_COLORS），
+ *    用户自定义时仍允许任意 hex（schema 只做格式校验，合法性落在前端 picker）；
+ *  - 团队仅是「人」的分组容器，不参与任务结构、不进甘特图、不进排程。
+ */
+export interface Team {
+  /** 稳定 ID，落盘用；由 normalizePlan 遇空时分配 `t_<seq>` */
+  id: string;
+  /** 团队名；同一 plan 内去重 */
+  name: string;
+  /** 展示色；用于 PeopleCell chip 背景 */
+  color: string;
+}
+
+/** 团队默认调色板（UI picker 用） */
+export const TEAM_COLORS: readonly string[] = [
+  '#4f46e5', // indigo
+  '#0ea5e9', // sky
+  '#10b981', // emerald
+  '#f59e0b', // amber
+  '#ec4899', // pink
+  '#8b5cf6', // violet
+] as const;
+
+/** 性别对应 WeChat 风格 tag 色（CSS 变量，由 CSS 配合） */
+export const GENDER_TAG_COLORS = {
+  male: { fg: '#1d4ed8', bg: '#dbeafe' },   // 蓝
+  female: { fg: '#be185d', bg: '#fce7f3' }, // 粉
+} as const;
+
+/** 落盘 schema 版本（K17）—— 仅指 Plan；HistoryFile / TodosFile 各自独立 */
+export const SCHEMA_VERSION = 2 as const;
+
+/** 历史文件 schema 版本（与 Plan 解耦；即使 Plan 升到 v3 也不影响历史文件） */
+export const HISTORY_SCHEMA_VERSION = 1 as const;
 
 /** 数据来源 → 中文说明（UI tooltip） */
 export const DERIVE_SOURCE_LABEL: Record<DeriveSource, string> = {

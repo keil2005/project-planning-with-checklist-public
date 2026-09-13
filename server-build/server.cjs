@@ -47539,7 +47539,22 @@ function isDomainError(e) {
   return e instanceof DomainError;
 }
 var NOTES_MAX_LEN = 500;
-var SCHEMA_VERSION = 1;
+var TEAM_COLORS = [
+  "#4f46e5",
+  // indigo
+  "#0ea5e9",
+  // sky
+  "#10b981",
+  // emerald
+  "#f59e0b",
+  // amber
+  "#ec4899",
+  // pink
+  "#8b5cf6"
+  // violet
+];
+var SCHEMA_VERSION = 2;
+var HISTORY_SCHEMA_VERSION = 1;
 
 // shared/datetime.ts
 import_dayjs.default.extend(import_customParseFormat.default);
@@ -48504,8 +48519,67 @@ function normalizePlan(input) {
       anchorDate,
       defaultDuration
     },
-    tasks: ordered
+    tasks: ordered,
+    // v1.4.1+ 团队/人员注册表（v1.4.1 引入）：
+    //   - 缺失 → 兜底空数组（v1.4.0 旧 plan 自动平滑升级，不破坏向前兼容）；
+    //   - 含 id 缺/空的 → 按出现顺序补 `t_<seq>` / `p_<seq>`；
+    //   - name 必填 + 大小写不敏感去重；
+    //   - color 默认从 TEAM_COLORS 按出现顺序分配；
+    //   - teamIds 过滤掉不存在的 team.id（orphan 防御）。
+    teams: normalizeTeams(raw.teams),
+    people: normalizePeopleRegistry(raw.people, raw.tasks ?? [])
   };
+}
+function normalizeTeams(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  const seenNames = /* @__PURE__ */ new Set();
+  const seenIds = /* @__PURE__ */ new Set();
+  for (let i = 0; i < raw.length; i += 1) {
+    const r = raw[i] ?? {};
+    const name = typeof r.name === "string" ? r.name.trim() : "";
+    if (name === "") continue;
+    const key = name.toLowerCase();
+    if (seenNames.has(key)) continue;
+    seenNames.add(key);
+    const id = typeof r.id === "string" && r.id !== "" && !seenIds.has(r.id) ? r.id : `t_${i + 1}`;
+    seenIds.add(id);
+    const color = typeof r.color === "string" && /^#[0-9a-fA-F]{6}$/.test(r.color) ? r.color : TEAM_COLORS[out.length % TEAM_COLORS.length];
+    out.push({ id, name, color });
+  }
+  return out;
+}
+function normalizePeopleRegistry(raw, tasks) {
+  const explicit = [];
+  const seenNames = /* @__PURE__ */ new Set();
+  const seenIds = /* @__PURE__ */ new Set();
+  if (Array.isArray(raw)) {
+    for (let i = 0; i < raw.length; i += 1) {
+      const r = raw[i] ?? {};
+      const name = typeof r.name === "string" ? r.name.trim() : "";
+      if (name === "") continue;
+      const key = name.toLowerCase();
+      if (seenNames.has(key)) continue;
+      seenNames.add(key);
+      const id = typeof r.id === "string" && r.id !== "" && !seenIds.has(r.id) ? r.id : `p_${i + 1}`;
+      seenIds.add(id);
+      const gender = r.gender === "male" || r.gender === "female" ? r.gender : void 0;
+      const teamIds = Array.isArray(r.teamIds) ? r.teamIds.filter((x) => typeof x === "string") : [];
+      explicit.push({ id, name, gender, teamIds });
+    }
+  }
+  for (const t of tasks) {
+    for (const name of [...t.owner ?? [], ...t.consultant ?? []]) {
+      const trimmed = name.trim();
+      if (trimmed === "") continue;
+      const key = trimmed.toLowerCase();
+      if (seenNames.has(key)) continue;
+      seenNames.add(key);
+      const id = `p_${explicit.length + 1}`;
+      explicit.push({ id, name: trimmed, gender: void 0, teamIds: [] });
+    }
+  }
+  return explicit;
 }
 function buildGraph(tasks, effDeps, parentOf) {
   const adj = /* @__PURE__ */ new Map();
@@ -49504,15 +49578,15 @@ function migratePlan(raw, planId) {
 }
 function migrateHistory(raw, planId) {
   const obj = raw ?? {};
-  const sv = Number(obj.schemaVersion ?? SCHEMA_VERSION);
-  if (sv !== SCHEMA_VERSION) {
+  const sv = Number(obj.schemaVersion ?? HISTORY_SCHEMA_VERSION);
+  if (sv !== HISTORY_SCHEMA_VERSION) {
     throw new DomainError(
       ErrCode.ERR_INTERNAL,
-      `\u5386\u53F2 ${planId} \u7684 schemaVersion=${sv} \u4E0D\u53D7\u652F\u6301\uFF08\u5F53\u524D\u652F\u6301 ${SCHEMA_VERSION}\uFF09`
+      `\u5386\u53F2 ${planId} \u7684 schemaVersion=${sv} \u4E0D\u53D7\u652F\u6301\uFF08\u5F53\u524D\u652F\u6301 ${HISTORY_SCHEMA_VERSION}\uFF09`
     );
   }
   const versions = Array.isArray(obj.versions) ? obj.versions : [];
-  return { schemaVersion: SCHEMA_VERSION, planId: obj.planId ?? planId, versions };
+  return { schemaVersion: HISTORY_SCHEMA_VERSION, planId: obj.planId ?? planId, versions };
 }
 function generatePlanId() {
   const stamp = (0, import_dayjs.default)().format("YYYYMMDD-HHmmss");
@@ -49593,7 +49667,7 @@ var HistoryRepository = class {
   readHistory(planId) {
     const file = historyFile(planId);
     if (!import_node_fs3.default.existsSync(file)) {
-      return { schemaVersion: SCHEMA_VERSION, planId, versions: [] };
+      return { schemaVersion: HISTORY_SCHEMA_VERSION, planId, versions: [] };
     }
     return migrateHistory(readJson(file), planId);
   }
@@ -49636,7 +49710,7 @@ var HistoryRepository = class {
     };
     const entry = { version, timestamp, editor, notes, planSnapshot: snapshot };
     history.versions.push(entry);
-    history.schemaVersion = SCHEMA_VERSION;
+    history.schemaVersion = HISTORY_SCHEMA_VERSION;
     history.planId = planId;
     const payload = `${JSON.stringify(history, null, 2)}
 `;
@@ -49883,7 +49957,7 @@ function importMppFile(filePath) {
   }
   const { name, tasks } = toPlan(parsed);
   const plan = {
-    schemaVersion: 1,
+    schemaVersion: SCHEMA_VERSION,
     planId: "",
     name,
     version: 0,
@@ -50144,7 +50218,7 @@ function createApiRouter() {
       const normalized = normalizePlan({
         ...incomingWithFreshTodos,
         planId,
-        schemaVersion: 1,
+        schemaVersion: SCHEMA_VERSION,
         createdAt: current.createdAt,
         version: current.version
       });
@@ -50203,7 +50277,7 @@ function createApiRouter() {
         ...target.planSnapshot,
         tasks: target.planSnapshot.tasks.map((t) => ({ ...t, todos: latestByTask[t.id] ?? [] })),
         planId,
-        schemaVersion: 1,
+        schemaVersion: SCHEMA_VERSION,
         createdAt: current.createdAt,
         version: current.version
       });
@@ -51114,7 +51188,7 @@ function seedDemoPlanIfEmpty(workspaceId, createdBy) {
   const t12Todos = applyTodoOp([], { op: "add", text: "\u51C6\u5907\u7535\u5546\u8BE6\u60C5\u9875\u4E0E\u5F00\u7BB1\u89C6\u9891" }, makeTodoId);
   atomicWriteJson3(planFile(raceCar.planId), raceCar);
   atomicWriteJson3(historyFile(raceCar.planId), {
-    schemaVersion: SCHEMA_VERSION,
+    schemaVersion: HISTORY_SCHEMA_VERSION,
     planId: raceCar.planId,
     versions: [
       {

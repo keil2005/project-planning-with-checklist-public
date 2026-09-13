@@ -13,7 +13,7 @@ import {
   createEmptyTask,
   normalizePlan,
 } from '../../shared/scheduler';
-import { SCHEMA_VERSION, type Task } from '../../shared/types';
+import { SCHEMA_VERSION, type Person, type Task } from '../../shared/types';
 import {
   EMPTY_FILTER,
   activeColumnKeys,
@@ -78,11 +78,21 @@ function makeTasks(): Task[] {
 const ids = (keep: Set<string> | null): string[] => (keep ? [...keep].sort() : []);
 
 function ctx(tasks: Task[], me: string | null = 'User01'): FilterContext {
-  return { computed: {}, idToSeq: buildIdSeqMaps(tasks).idToSeq, me };
+  return { computed: {}, idToSeq: buildIdSeqMaps(tasks).idToSeq, me, peopleByName: new Map() };
 }
 
-function keepOf(f: FilterState, tasks: Task[], me: string | null = 'User01'): string[] {
-  return ids(computeKeepIds(tasks, f, ctx(tasks, me)));
+/** 构造 peopleByName：name → Person（id 客户端不参与匹配，仅 name 命中） */
+function ctxWithPeople(tasks: Task[], people: Person[]): FilterContext {
+  const m = new Map<string, Person>();
+  for (const p of people) m.set(p.name.trim().toLowerCase(), p);
+  return { computed: {}, idToSeq: buildIdSeqMaps(tasks).idToSeq, me: null, peopleByName: m };
+}
+
+function keepOf(f: FilterState, tasks: Task[], me: string | null = 'User01', people?: Person[]): string[] {
+  const c = people
+    ? ctxWithPeople(tasks, people)
+    : { computed: {}, idToSeq: buildIdSeqMaps(tasks).idToSeq, me, peopleByName: new Map<string, Person>() };
+  return ids(computeKeepIds(tasks, f, c));
 }
 
 /** 折叠 + 过滤后的可见行序号（1-based，即 task.seq） */
@@ -101,7 +111,7 @@ describe('U03·筛选纯函数', () => {
   it('Assign to me：负责人命中 + 顾问人命中，两者都算', () => {
     const tasks = makeTasks();
     // T-0002 负责人是 User01；T-0003 顾问人是 User01（负责人是 User13）→ 两条都要命中
-    expect(keepOf({ byColumn: {}, onlyMine: true }, tasks)).toEqual(['T-0001', 'T-0002', 'T-0003']);
+    expect(keepOf({ byColumn: {}, onlyMine: true, crossTeamIds: [], crossIncludeUnassigned: true }, tasks)).toEqual(['T-0001', 'T-0002', 'T-0003']);
   });
 
   it('Assign to me：大小写与首尾空格不敏感', () => {
@@ -109,19 +119,19 @@ describe('U03·筛选纯函数', () => {
     expect(isMine(tasks[1], 'user01')).toBe(true);
     expect(isMine(tasks[1], ' USER01 ')).toBe(true);
     expect(isMine(tasks[4], 'user01')).toBe(false); // User05
-    expect(keepOf({ byColumn: {}, onlyMine: true }, tasks, 'uSeR01')).toEqual(['T-0001', 'T-0002', 'T-0003']);
+    expect(keepOf({ byColumn: {}, onlyMine: true, crossTeamIds: [], crossIncludeUnassigned: true }, tasks, 'uSeR01')).toEqual(['T-0001', 'T-0002', 'T-0003']);
   });
 
   it('Assign to me：未选身份时命中为空（UI 上按钮已禁用，这里兜底）', () => {
     const tasks = makeTasks();
-    expect(keepOf({ byColumn: {}, onlyMine: true }, tasks, null)).toEqual([]);
-    expect(keepOf({ byColumn: {}, onlyMine: true }, tasks, '  ')).toEqual([]);
+    expect(keepOf({ byColumn: {}, onlyMine: true, crossTeamIds: [], crossIncludeUnassigned: true }, tasks, null)).toEqual([]);
+    expect(keepOf({ byColumn: {}, onlyMine: true, crossTeamIds: [], crossIncludeUnassigned: true }, tasks, '  ')).toEqual([]);
   });
 
   it('祖先链：命中子任务时，其所有祖先一并保留（保持 WBS 上下文）', () => {
     const tasks = makeTasks();
     // 只勾 User05（第 5 行）→ 父任务「阶段二」(4) 也要出现
-    const f: FilterState = { byColumn: { owner: { kind: 'enum', values: ['User05'], blanks: false } }, onlyMine: false };
+    const f: FilterState = { byColumn: { owner: { kind: 'enum', values: ['User05'], blanks: false } }, onlyMine: false, crossTeamIds: [], crossIncludeUnassigned: true };
     expect(keepOf(f, tasks)).toEqual(['T-0004', 'T-0005']);
     expect(visibleSeqs(f, tasks)).toEqual([4, 5]);
   });
@@ -130,14 +140,14 @@ describe('U03·筛选纯函数', () => {
     const tasks = makeTasks();
     const withBlank: FilterState = {
       byColumn: { owner: { kind: 'enum', values: ['User01'], blanks: true } },
-      onlyMine: false,
+      onlyMine: false, crossTeamIds: [], crossIncludeUnassigned: true,
     };
     // User01 行(2) + 全部空值行：1、4、6 → 加祖先（1 已在、4 已在）
     expect(visibleSeqs(withBlank, tasks)).toEqual([1, 2, 4, 6]);
 
     const noBlank: FilterState = {
       byColumn: { owner: { kind: 'enum', values: ['User01'], blanks: false } },
-      onlyMine: false,
+      onlyMine: false, crossTeamIds: [], crossIncludeUnassigned: true,
     };
     expect(visibleSeqs(noBlank, tasks)).toEqual([1, 2]);
   });
@@ -149,7 +159,7 @@ describe('U03·筛选纯函数', () => {
     const list = [...makeTasks(), t];
     const f: FilterState = {
       byColumn: { owner: { kind: 'enum', values: ['User05'], blanks: false } },
-      onlyMine: false,
+      onlyMine: false, crossTeamIds: [], crossIncludeUnassigned: true,
     };
     const keep = keepOf(f, list);
     expect(keep).toContain('T-0009'); // owner 里含 User05 即命中
@@ -159,7 +169,7 @@ describe('U03·筛选纯函数', () => {
     const tasks = makeTasks();
     const mkF = (op: 'contains' | 'notContains' | 'startsWith' | 'equals', value: string): FilterState => ({
       byColumn: { name: { kind: 'text', op, value } },
-      onlyMine: false,
+      onlyMine: false, crossTeamIds: [], crossIncludeUnassigned: true,
     });
     expect(visibleSeqs(mkF('contains', '设计'), tasks)).toEqual([1, 2]);
     // 名称不含「阶段」的是 2/3/5/6，但祖先链会把两个父任务带回来 → 全显示
@@ -170,7 +180,7 @@ describe('U03·筛选纯函数', () => {
 
   it('文本筛选：关键词为空 = 该列不约束（点开漏斗还没输入时不能整表消失）', () => {
     const tasks = makeTasks();
-    const f: FilterState = { byColumn: { name: { kind: 'text', op: 'contains', value: '  ' } }, onlyMine: false };
+    const f: FilterState = { byColumn: { name: { kind: 'text', op: 'contains', value: '  ' } }, onlyMine: false, crossTeamIds: [], crossIncludeUnassigned: true };
     expect(visibleSeqs(f, tasks)).toEqual([1, 2, 3, 4, 5, 6]);
   });
 
@@ -178,7 +188,7 @@ describe('U03·筛选纯函数', () => {
     const tasks = makeTasks();
     const mkF = (op: 'before' | 'onOrAfter' | 'between', from: string, to = ''): FilterState => ({
       byColumn: { start: { kind: 'date', op, from, to } },
-      onlyMine: false,
+      onlyMine: false, crossTeamIds: [], crossIncludeUnassigned: true,
     });
     // 早于 09-08：只有 09-01 的「设计」(2) + 祖先(1)
     expect(visibleSeqs(mkF('before', '2026-09-08'), tasks)).toEqual([1, 2]);
@@ -193,7 +203,7 @@ describe('U03·筛选纯函数', () => {
     // 阶段一(1)/阶段二(4) 没有 input.start，也不在计算值里 → 不命中，但作为祖先仍保留
     const f: FilterState = {
       byColumn: { start: { kind: 'date', op: 'onOrAfter', from: '2026-09-01', to: '' } },
-      onlyMine: false,
+      onlyMine: false, crossTeamIds: [], crossIncludeUnassigned: true,
     };
     // 命中 2/3/5/6，祖先 1、4 补回 → 全都在（这个用例里祖先链把父任务带回来了）
     expect(visibleSeqs(f, tasks)).toEqual([1, 2, 3, 4, 5, 6]);
@@ -206,7 +216,7 @@ describe('U03·筛选纯函数', () => {
         owner: { kind: 'enum', values: ['User01', 'User13'], blanks: false },
         name: { kind: 'text', op: 'contains', value: '评审' },
       },
-      onlyMine: false,
+      onlyMine: false, crossTeamIds: [], crossIncludeUnassigned: true,
     };
     // owner∈{User01,User13} 命中 2、3；name 含「评审」只剩 3 → 加祖先 1
     expect(visibleSeqs(f, tasks)).toEqual([1, 3]);
@@ -216,7 +226,7 @@ describe('U03·筛选纯函数', () => {
     const tasks = makeTasks();
     const f: FilterState = {
       byColumn: { name: { kind: 'text', op: 'contains', value: '设计' } },
-      onlyMine: true,
+      onlyMine: true, crossTeamIds: [], crossIncludeUnassigned: true,
     };
     // 「设计」(2) 且负责人是 User01 → 命中；祖先 1
     expect(visibleSeqs(f, tasks, 'User01')).toEqual([1, 2]);
@@ -227,7 +237,7 @@ describe('U03·筛选纯函数', () => {
   it('折叠优先于筛选：折叠父任务后，命中筛选的子孙也不显示', () => {
     const tasks = makeTasks();
     tasks[0].collapsed = true; // 折叠「阶段一」
-    const f: FilterState = { byColumn: {}, onlyMine: true };
+    const f: FilterState = { byColumn: {}, onlyMine: true, crossTeamIds: [], crossIncludeUnassigned: true };
     // 命中 2、3，但被折叠隐藏；祖先 1 仍显示
     expect(visibleSeqs(f, tasks)).toEqual([1]);
   });
@@ -245,11 +255,11 @@ describe('U03·筛选纯函数', () => {
 
   it('isFilterActive / activeColumnKeys 只认真正设了条件的列', () => {
     expect(isFilterActive(EMPTY_FILTER)).toBe(false);
-    expect(isFilterActive({ byColumn: {}, onlyMine: true })).toBe(true);
+    expect(isFilterActive({ byColumn: {}, onlyMine: true, crossTeamIds: [], crossIncludeUnassigned: true })).toBe(true);
 
     const f: FilterState = {
       byColumn: { consultant: { kind: 'enum', values: ['User01'], blanks: true } },
-      onlyMine: false,
+      onlyMine: false, crossTeamIds: [], crossIncludeUnassigned: true,
     };
     expect(isFilterActive(f)).toBe(true);
     expect(activeColumnKeys(f, COLUMNS.map((c) => c.key))).toEqual(['consultant']);
@@ -276,7 +286,190 @@ describe('U03·筛选纯函数', () => {
   it('脏数据：parentId 自环不会把祖先链遍历卡死', () => {
     const tasks = makeTasks();
     tasks[0].parentId = 'T-0001'; // 自环
-    const f: FilterState = { byColumn: {}, onlyMine: true };
+    const f: FilterState = { byColumn: {}, onlyMine: true, crossTeamIds: [], crossIncludeUnassigned: true };
     expect(keepOf(f, tasks)).toEqual(['T-0001', 'T-0002', 'T-0003']);
+  });
+});
+
+/* ============================ 「Cross-functional」维度 ============================ */
+
+describe('U03·Cross-functional 跨部门筛选', () => {
+  /**
+   * 测试用人员：
+   *   - User01 → 团队硬件
+   *   - User13 → 团队软件
+   *   - User05 → 无团队（注册但 teamIds=[]）
+   *   - "野人 Stray"     → 未注册到 people（视为无团队）
+   */
+  function makePeople(): Person[] {
+    return [
+      { id: 'p1', name: 'User01', teamIds: ['hardware'] },
+      { id: 'p2', name: 'User13', teamIds: ['software'] },
+      { id: 'p3', name: 'User05', teamIds: [] },
+    ];
+  }
+
+  /** 在 makeTasks 之上加一个外部人员 Stray 主导的任务，避免污染其它用例 */
+  function makeTasksWithStray(): Task[] {
+    const list = makeTasks().slice();
+    const stray = createEmptyTask('T-0099', 99, null, '外部协作');
+    stray.owner = ['Stray'];
+    stray.input.start = '2026-09-12';
+    stray.input.end = '2026-09-14';
+    list.push(stray);
+    return list;
+  }
+
+  it('未启用：crossTeamIds=[] = pass', () => {
+    const tasks = makeTasks();
+    const f: FilterState = { byColumn: {}, onlyMine: false, crossTeamIds: [], crossIncludeUnassigned: true };
+    expect(computeKeepIds(tasks, f, ctxWithPeople(tasks, makePeople()))).toBeNull();
+  });
+
+  it('命中：勾选「硬件」，owner 属硬件队的 User01 + 其顾问（无团队）→ 命中 User01 行；祖先链补父', () => {
+    const tasks = makeTasks();
+    const f: FilterState = {
+      byColumn: {},
+      onlyMine: false,
+      crossTeamIds: ['hardware'],
+      crossIncludeUnassigned: true,
+    };
+    const people = makePeople();
+    // matched:
+    //   T-0002 design owner User01(硬件) → 命中
+    //   T-0003 review consultant User01(硬件) → 命中
+    //   T-0005 采购 owner User05(无团队) → blanks
+    //   T-0001/4/6 完全没人 → false（无人员 ≠ 无团队人员）
+    // keeps（祖先链）= T-0001（T-0002/3 父）+ T-0004（T-0005 父）
+    expect(keepOf(f, tasks, undefined, people)).toEqual(['T-0001', 'T-0002', 'T-0003', 'T-0004', 'T-0005']);
+  });
+
+  it('关闭 blanks：勾「硬件」但不勾「无团队」时，无团队的任务（试产、采购）应被过滤掉，父任务同理（无人员）', () => {
+    const tasks = makeTasks();
+    const f: FilterState = {
+      byColumn: {},
+      onlyMine: false,
+      crossTeamIds: ['hardware'],
+      crossIncludeUnassigned: false,
+    };
+    const people = makePeople();
+    const c = ctxWithPeople(tasks, people);
+    // matched: T-0002 / T-0003（User01 在硬件）
+    // keeps: T-0001 + T-0002 + T-0003
+    expect(keepOf(f, tasks, undefined, people)).toEqual(['T-0001', 'T-0002', 'T-0003']);
+    expect(computeVisibleTasks(tasks, computeKeepIds(tasks, f, c)).map((t) => t.seq)).toEqual([1, 2, 3]);
+  });
+
+  it('多选团队：勾「硬件 + 软件」= 两队所有 owner/consultant 命中；无团队仍按 blanks 控制', () => {
+    const tasks = makeTasks();
+    const f: FilterState = {
+      byColumn: {},
+      onlyMine: false,
+      crossTeamIds: ['hardware', 'software'],
+      crossIncludeUnassigned: false,
+    };
+    const people = makePeople();
+    // matched: T-0002 (User01 hw) + T-0003 (User13 sw)
+    // keeps: T-0001 + T-0002 + T-0003
+    expect(keepOf(f, tasks, undefined, people)).toEqual(['T-0001', 'T-0002', 'T-0003']);
+  });
+
+  it('AND 叠加 onlyMine：我的 + 跨部门', () => {
+    const tasks = makeTasks();
+    const people = makePeople();
+    // 我是 User01（在硬件），勾硬件 + blanks → 至少跨部门命中 T-0002/3 + User05 + 父
+    const cWithMe: FilterContext = { ...ctxWithPeople(tasks, people), me: 'User01' };
+    const f: FilterState = {
+      byColumn: {},
+      onlyMine: true,
+      crossTeamIds: ['hardware'],
+      crossIncludeUnassigned: true,
+    };
+    expect(computeVisibleTasks(tasks, computeKeepIds(tasks, f, cWithMe)).map((t) => t.seq)).toEqual([
+      1, 2, 3,
+    ]);
+
+    // 我是 User13（软件），勾硬件 → onlyMine 命中 T-0003，cross-functional 只看 T-0002/3 → 都通过 → visibleSeqs = [1,2,3]
+    const cWithMe2: FilterContext = { ...ctxWithPeople(tasks, people), me: 'User13' };
+    const f2: FilterState = {
+      byColumn: {},
+      onlyMine: true,
+      crossTeamIds: ['hardware'],
+      crossIncludeUnassigned: false,
+    };
+    expect(computeVisibleTasks(tasks, computeKeepIds(tasks, f2, cWithMe2)).map((t) => t.seq)).toEqual([1, 3]);
+  });
+
+  it('未注册到 people 的人员视为无团队（与注册过但 teamIds=[] 行为一致）', () => {
+    const tasks = makeTasksWithStray();
+    const f: FilterState = {
+      byColumn: {},
+      onlyMine: false,
+      crossTeamIds: ['hardware'],
+      crossIncludeUnassigned: true,
+    };
+    const people = makePeople();
+    // matched: T-0002 / T-0003 / T-0005 + T-0099 (Stray 未注册 → blanks)
+    // keeps: T-0001 (T-0002/3 父) + T-0004 (T-0005 父) + 4 个命中
+    // T-0006 完全无人 → 不命中、不进 keep
+    expect(keepOf(f, tasks, undefined, people)).toEqual(['T-0001', 'T-0002', 'T-0003', 'T-0004', 'T-0005', 'T-0099']);
+  });
+
+  it('无效团队 ID：纯函数 layer 把任意 id 都视为「该 id 没人在」= 0 命中；与关闭 blanks 时一致', () => {
+    const tasks = makeTasks();
+    const f: FilterState = {
+      byColumn: {},
+      onlyMine: false,
+      crossTeamIds: ['nonexistent-team'],
+      crossIncludeUnassigned: false,
+    };
+    const people = makePeople();
+    // 没人属于该团队、不含 blanks → matched = ∅ → keep = ∅
+    expect(keepOf(f, tasks, undefined, people)).toEqual([]);
+  });
+
+  it('大小写不敏感：人员注册表按小写 key 匹配', () => {
+    const tasks = makeTasks();
+    // 注册成 "user01" 小写，task 里的 owner 是 "User01"
+    const c: FilterContext = ctxWithPeople(tasks, [{ id: 'p1', name: 'user01', teamIds: ['hardware'] }]);
+    const f: FilterState = {
+      byColumn: {},
+      onlyMine: false,
+      crossTeamIds: ['hardware'],
+      crossIncludeUnassigned: false,
+    };
+    const keep = computeKeepIds(tasks, f, c);
+    expect(keep).not.toBeNull();
+    // T-0002 design User01 命中；T-0003 consultant User01 也命中；祖先 T-0001
+    expect([...(keep as Set<string>)].sort()).toEqual(['T-0001', 'T-0002', 'T-0003']);
+  });
+
+  it('无效团队 ID：store 层会过滤掉；纯函数 layer 把任意 id 都视为「该 id 没人在」= 0 命中', () => {
+    const tasks = makeTasks();
+    const f: FilterState = {
+      byColumn: {},
+      onlyMine: false,
+      crossTeamIds: ['nonexistent-team'],
+      crossIncludeUnassigned: false,
+    };
+    // 没人属于该团队、不含 blanks → 除了祖先链补出的，没有任何「命中」
+    // 命中 = ∅ → keep 为 ∅，但只有原本 ancestors 才能拉回 → 最终 kept = ∅
+    expect(keepOf(f, tasks)).toEqual([]);
+  });
+
+  it('大小写不敏感：人员注册表按小写 key 匹配', () => {
+    const tasks = makeTasks();
+    // 注册成 "user01" 小写，task 里的 owner 是 "User01"
+    const c: FilterContext = ctxWithPeople(tasks, [{ id: 'p1', name: 'user01', teamIds: ['hardware'] }]);
+    const f: FilterState = {
+      byColumn: {},
+      onlyMine: false,
+      crossTeamIds: ['hardware'],
+      crossIncludeUnassigned: false,
+    };
+    const keep = computeKeepIds(tasks, f, c);
+    expect(keep).not.toBeNull();
+    // T-0002 design User01 命中；T-0003 consultant User01 也命中；祖先 T-0001
+    expect([...(keep as Set<string>)].sort()).toEqual(['T-0001', 'T-0002', 'T-0003']);
   });
 });

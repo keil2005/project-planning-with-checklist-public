@@ -310,8 +310,11 @@ h6 {
   transition: background-color var(--duration) var(--ease-in-out);
 }
 
-/* 行 hover：极淡底色，提示可交互（选中态优先级更高，写在后面） */
-.pg-row:hover:not(.pg-row--selected) {
+/* 行 hover：极淡底色，提示可交互（选中态优先级更高，写在后面）
+   v1.4.1+ 加 .pg-row--hovered 类版本（store 驱动，与 SVG 行高亮同源）。
+   原 :hover 选择器仍保留作 fallback —— React mount 前那一瞬、setHoveredRowId 未触达时仍自然高亮。 */
+.pg-row:hover:not(.pg-row--selected),
+.pg-row--hovered:not(.pg-row--selected) {
   background: var(--row-hover);
 }
 
@@ -412,13 +415,19 @@ h6 {
   z-index: 1;
 }
 
+/* v1.4.1 克制：error 保留红边+红底（必须醒目），warn 仅留左侧细条，不抢视觉 */
 .pg-input--error {
   border-color: var(--error) !important;
   background: var(--error-soft) !important;
 }
 .pg-input--warn {
-  border-color: var(--warn) !important;
-  background: var(--warn-soft) !important;
+  box-shadow: inset 3px 0 0 var(--warn);
+}
+.pg-input--warn:focus:not(:disabled) {
+  box-shadow: var(--shadow-focus), inset 3px 0 0 var(--warn);
+}
+[data-theme='dark'] .pg-input--warn:focus:not(:disabled) {
+  box-shadow: var(--shadow-focus-dark), inset 3px 0 0 var(--warn);
 }
 
 /* 开始/结束日期单元格：输入框 + 日历按钮同行，不撑破网格 */
@@ -928,8 +937,12 @@ body.pg-resizing * {
 .pg-gantt-svg .gantt-holiday {
   fill: var(--holiday);
 }
-.pg-gantt-svg .gantt-makeup-cell {
-  fill: var(--makeup);
+.pg-gantt-svg .gantt-makeup {
+  /* v1.4.1 修复：补班日是「工作日」，按设计只用顶部 4px 条标记（见 GanttChart 注释）。
+     原完整高度的 rect 缺 CSS 规则 → SVG fill 回退成黑色，整列渲染成黑条。
+     这里显式透明 + 不吃指针事件（它只是占位，hover 由 gantt-makeup-strip 承担）。 */
+  fill: transparent;
+  pointer-events: none;
 }
 .pg-gantt-svg .gantt-weekend {
   fill: var(--weekend);

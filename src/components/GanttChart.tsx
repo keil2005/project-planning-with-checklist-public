@@ -32,8 +32,22 @@ import { deriveLabel, t, useT, useLangStore } from '../i18n';
 
 /* ============================ 常量 ============================ */
 
-/** 项目起止两侧留白天数 */
+/** 项目起止两侧留白天数（按项目跨度自适应：短项目紧凑、长项目宽松） */
 const PAD_DAYS = 7;
+
+/**
+ * 按项目跨度自适应 padding：
+ * - 短项目（≤7 天）只留 2 天：避免 3 天项目被 14 天 padding 稀释成 17 天甘特
+ * - 中等（8–30 天）留 4 天
+ * - 中长（31–90 天）保留默认 7 天
+ * - 超长（>90 天）给到 10 天呼吸感
+ */
+function adaptivePad(projectSpanDays: number): number {
+  if (projectSpanDays <= 7) return 2;
+  if (projectSpanDays <= 30) return 4;
+  if (projectSpanDays <= 90) return PAD_DAYS;
+  return 10;
+}
 
 /** 叶子任务条高度 */
 const BAR_H = 16;
@@ -242,23 +256,50 @@ export default function GanttChart({ scrollRef, onScroll }: GanttChartProps): JS
   const calendar = useStore((s) => s.calendar);
   const criticalPathOn = useStore((s) => s.criticalPathOn);
   const criticalTaskIds = useStore((s) => s.criticalTaskIds);
+  /** Y → row 驱动两侧 highlight，与 TaskTable 共享同一来源（v1.4.1+） */
+  const hoveredRowId = useStore((s) => s.hoveredRowId);
+  const setHoveredRowId = useStore((s) => s.setHoveredRowId);
 
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [dayHover, setDayHover] = useState<{ x: number; label: string; date: ISODate } | null>(null);
   const didAutoScroll = useRef<string>('');
+  // 可视区宽度（v1.4.1）：用于让时间范围至少铺满面板，消除右侧硬边空白
+  const [availW, setAvailW] = useState(0);
 
   const dayWidth = DAY_WIDTH[zoom];
   const today = todayISO();
+
+  useEffect(() => {
+    // 注意两点：
+    // 1) 读 .pg-scroll 的 clientWidth（已扣除纵向滚动条 18px），否则图表会撑出横向滚动条；
+    // 2) 但 ResizeObserver 观测其「父容器」—— 自身宽度会随滚动条出现而抖动，
+    //    直接观测会形成「变宽 → 出滚动条 → 可视宽变小 → 变窄」的振荡。
+    const scrollEl = scrollRef?.current as HTMLElement | null;
+    const watchEl = (scrollEl?.parentElement ?? scrollEl) as HTMLElement | null;
+    if (!scrollEl || !watchEl) return;
+    const measure = (): void => setAvailW(scrollEl.clientWidth);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(watchEl);
+    return () => ro.disconnect();
+  }, [scrollRef]);
 
   /* ---- 时间范围 ---- */
   const range = useMemo(() => {
     const ps = sched?.projectStart ?? today;
     const pe = sched?.projectEnd ?? today;
-    const rangeStart = addDays(ps, -PAD_DAYS);
-    const rangeEnd = addDays(pe, PAD_DAYS);
-    const totalDays = Math.max(diffDays(rangeStart, rangeEnd), 14);
+    const projectSpan = Math.max(diffDays(ps, pe), 1);
+    const pad = adaptivePad(projectSpan);
+    const rangeStart = addDays(ps, -pad);
+    const rangeEnd = addDays(pe, pad);
+    const actualDays = Math.max(diffDays(rangeStart, rangeEnd), 1);
+    // 视觉保底：短项目不把图表缩成窄条 —— 至少铺满可视区（保持同一 dayWidth，不缩放网格）。
+    // 留 20px 安全边（纵向滚动条宽）：宁可右侧空 ≤1 天，也不要撑出横向滚动条（会破坏 K16 行高同步）。
+    const usable = Math.max(availW - 20, 0);
+    const fillDays = usable > 0 ? Math.floor(usable / dayWidth) : 0;
+    const totalDays = Math.max(actualDays, fillDays);
     return { rangeStart, rangeEnd, totalDays };
-  }, [sched?.projectStart, sched?.projectEnd, today]);
+  }, [sched?.projectStart, sched?.projectEnd, today, availW, dayWidth]);
 
   const totalWidth = Math.max(360, range.totalDays * dayWidth);
   // 2026-09-08 修复：甘特底部新增「里程碑 summary 行」——把所有 milestone 集中到一行展示。
@@ -412,9 +453,22 @@ export default function GanttChart({ scrollRef, onScroll }: GanttChartProps): JS
         ref={scrollRef}
         className="pg-scroll"
         onScroll={onScroll}
+        onMouseMove={(e) => {
+          // 永远基于 Y 解析（不论 on X 落到哪里），命中 visible 行 → 写 store（同值自动短路）
+          const el = scrollRef?.current;
+          if (!el || !visible.length) return;
+          const rect = el.getBoundingClientRect();
+          const yInContent = e.clientY - rect.top + el.scrollTop;
+          const bodyY = yInContent - HEAD_H;
+          if (bodyY < 0) { setHoveredRowId(null); return; }
+          const idx = Math.floor(bodyY / ROW_H);
+          if (idx < 0 || idx >= visible.length) { setHoveredRowId(null); return; }
+          setHoveredRowId(visible[idx].id);
+        }}
         onMouseLeave={() => {
           setHover(null);
           setDayHover(null);
+          setHoveredRowId(null);
         }}
       >
         <div style={{ width: totalWidth, position: 'relative' }}>
@@ -544,6 +598,20 @@ export default function GanttChart({ scrollRef, onScroll }: GanttChartProps): JS
                 width={totalWidth}
                 height={ROW_H}
                 fill={COLOR.selected}
+              />
+            )}
+
+            {/* v1.4.1+ Y-driven 行 hover 高亮：scroll 容器 onMouseMove 解析 Y 写 store
+                这里消费同一个 store 值；命中即在 bar 下层铺整行 var(--row-hover) 底色
+                —— 与左侧表格的 .pg-row--hovered 视觉一致 */}
+            {hoveredRowId !== null && rowOf.has(hoveredRowId) && selectedTaskId !== hoveredRowId && (
+              <rect
+                x={0}
+                y={(rowOf.get(hoveredRowId) as number) * ROW_H}
+                width={totalWidth}
+                height={ROW_H}
+                fill="var(--row-hover)"
+                pointerEvents="none"
               />
             )}
 

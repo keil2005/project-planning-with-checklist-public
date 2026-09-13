@@ -34,7 +34,17 @@ import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import FormatIndentDecreaseIcon from '@mui/icons-material/FormatIndentDecrease';
 import FormatIndentIncreaseIcon from '@mui/icons-material/FormatIndentIncrease';
-import { useCanEdit, useOwnerCandidates, useStore, useVisibleTasks } from '../store';
+import {
+  useCanEdit,
+  useOwnerCandidates,
+  usePeople,
+  usePersonByName,
+  useStore,
+  useTeams,
+  useTeamsForPerson,
+  useVisibleTasks,
+} from '../store';
+import { GenderTag } from './TeamManagerDialog';
 import DatePickerPopover from './DatePickerPopover';
 import { FilterBar } from './FilterBar';
 import ColumnFilterMenu from './ColumnFilterMenu';
@@ -251,6 +261,27 @@ interface PeopleCellProps {
 function PeopleCell(props: PeopleCellProps): JSX.Element {
   const { value, disabled, candidates, label, onCommit, onEditingChange } = props;
   const tr = useT();
+  // v1.4.1+：注册表查找（性别 tag + 团队 chip + dropdown 分组）
+  const people = usePeople();
+  const teams = useTeams();
+  const ungroupedLabel = tr('team.unassigned');
+  useGroupCache(people, teams, ungroupedLabel);
+  /**
+   * v1.4.1+：按团队分组排序后的候选列表。
+   * MUI Autocomplete 只合并**相邻**同组项 —— 不排序的话「未分组」会在分组的上下各出现一次。
+   * 排序稳定（同组内保持原顺序：workspace 成员在前、任务用过的名字在后）。
+   * 组间顺序：有团队者按组名 zh 排序在前，「未分组」垫底（分组信息更有用）。
+   */
+  const sortedCandidates = useMemo(() => {
+    return [...candidates].sort((a, b) => {
+      const ga = groupNameForPerson(a, people, teams, ungroupedLabel);
+      const gb = groupNameForPerson(b, people, teams, ungroupedLabel);
+      if (ga === gb) return 0;
+      if (ga === ungroupedLabel) return 1;
+      if (gb === ungroupedLabel) return -1;
+      return ga.localeCompare(gb, 'zh');
+    });
+  }, [candidates, people, teams, ungroupedLabel]);
   const [editing, setEditing] = useState<boolean>(false);
   const [inputValue, setInputValue] = useState<string>('');
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -323,12 +354,12 @@ function PeopleCell(props: PeopleCellProps): JSX.Element {
     onEditingChange?.(editing);
   }, [editing, onEditingChange]);
 
-  // 只读态
+  // 只读态：每个名字右侧贴 WeChat 风格性别小色点 + 团队 chip（v1.4.1+）
   const text = formatPeople(value);
   if (!editing) {
     return (
       <div
-        className={`pg-input ${disabled ? 'pg-input--disabled' : ''}`}
+        className={`pg-input pg-people-readonly ${disabled ? 'pg-input--disabled' : ''}`}
         style={disabled ? undefined : { cursor: 'pointer' }}
         title={
           disabled
@@ -339,8 +370,8 @@ function PeopleCell(props: PeopleCellProps): JSX.Element {
         }
         onClick={startEdit}
       >
-        {text !== '' ? (
-          text
+        {value.length > 0 ? (
+          <PeopleReadonlyDisplay names={value} />
         ) : (
           <span className="text-text-subtle">—</span>
         )}
@@ -379,7 +410,7 @@ function PeopleCell(props: PeopleCellProps): JSX.Element {
         clearOnBlur={false}
         openOnFocus
         size="small"
-        options={candidates}
+        options={sortedCandidates}
         value={value}
         inputValue={inputValue}
         onInputChange={(_e, v) => setInputValue(v)}
@@ -390,6 +421,8 @@ function PeopleCell(props: PeopleCellProps): JSX.Element {
           return opts.filter((o) => o.toLowerCase().includes(q));
         }}
         isOptionEqualToValue={(o, v) => o === v}
+        // v1.4.1+：按团队分组（多团队者按团队 id 字典序选第一个，团队缺失归入「未分组」）
+        groupBy={(option) => groupNameForPerson(option, people, teams, ungroupedLabel)}
         onChange={(_e, val, reason) => {
           if (
             reason === 'selectOption' ||
@@ -422,6 +455,8 @@ function PeopleCell(props: PeopleCellProps): JSX.Element {
         renderOption={(optionProps, option, { inputValue: iv }) => {
           const isFree = option === iv && !candidates.includes(option);
           const selected = value.includes(option);
+          // v1.4.1+：已登记的人在姓名左侧加微信风性别小色点
+          const p = people.find((x) => x.name === option);
           return (
             <li {...optionProps}>
               {isFree ? (
@@ -429,8 +464,9 @@ function PeopleCell(props: PeopleCellProps): JSX.Element {
                   {tr('task.addFreePrefix')} <strong>&ldquo;{option}&rdquo;</strong>
                 </span>
               ) : (
-                <span style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                <span style={{ display: 'flex', alignItems: 'center', width: '100%', gap: 4 }}>
                   <span style={{ width: 18, flex: '0 0 18px', color: 'var(--primary)' }}>{selected ? '✓' : ''}</span>
+                  {p ? <GenderTag gender={p.gender} /> : <span style={{ width: 16, flex: '0 0 16px' }} />}
                   <HighlightText text={option} query={iv} />
                 </span>
               )}
@@ -541,6 +577,8 @@ function TaskRow(props: RowProps): JSX.Element {
   const moveRow = useStore((s) => s.moveRow);
   const toggleCollapse = useStore((s) => s.toggleCollapse);
   const selectTask = useStore((s) => s.selectTask);
+  /** 与 GanttChart 共用同一 hover 源；命中此行时打 pg-row--hovered 类，CSS 决定底色 */
+  const hoveredRowId = useStore((s) => s.hoveredRowId);
   const candidates = useOwnerCandidates();
   const calendar = useStore((s) => s.calendar);
   const openNonWorkingPrompt = useStore((s) => s.openNonWorkingPrompt);
@@ -605,8 +643,10 @@ function TaskRow(props: RowProps): JSX.Element {
 
   return (
     <div
-      className={`pg-row ${selected ? 'pg-row--selected' : ''} ${isParent ? 'pg-row--parent' : ''}`}
+      className={`pg-row ${selected ? 'pg-row--selected' : ''} ${isParent ? 'pg-row--parent' : ''} ${hoveredRowId === task.id ? 'pg-row--hovered' : ''}`}
       style={gridStyle}
+      onMouseEnter={() => useStore.getState().setHoveredRowId(task.id)}
+      onMouseLeave={() => useStore.getState().setHoveredRowId(null)}
       onMouseDown={() => selectTask(task.id)}
     >
       {/* 行号（只读，等于依赖表达式里引用的编号） */}
@@ -1085,4 +1125,100 @@ export default function TaskTable({ scrollRef, onScroll }: TaskTableProps): JSX.
       </div>
     </div>
   );
+}
+
+/* ============================ PeopleCell 辅助 ============================ */
+
+/**
+ * PeopleCell 只读展示：每个名字 + WeChat 风性别小色点（已登记者） + 团队 chip（已登记者）。
+ * 多团队人：按 teamIds 顺序展示团队 chip（顺序即录入顺序，由 store 保证）。
+ * 名字间用顿号 `、` 分隔。
+ */
+function PeopleReadonlyDisplay({ names }: { names: string[] }): JSX.Element {
+  return (
+    <span style={{ display: 'inline-flex', flexWrap: 'wrap', alignItems: 'center', gap: 2 }}>
+      {names.map((name, i) => (
+        <span key={name + i} style={{ display: 'inline-flex', alignItems: 'center' }}>
+          {i > 0 && <span style={{ color: 'var(--text-muted)', margin: '0 2px' }}>、</span>}
+          <PersonInline name={name} />
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function PersonInline({ name }: { name: string }): JSX.Element {
+  const person = usePersonByName(name);
+  const teams = useTeamsForPerson(person);
+  // 未登记 / 既无性别又无团队 → 只显示名字（避免默认态每个名字后面挂「未分组」造成噪音）
+  if (!person || (!person.gender && teams.length === 0)) {
+    return <span>{name}</span>;
+  }
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+      <GenderTag gender={person.gender} />
+      <span>{name}</span>
+      {teams.map((t) => (
+        <span
+          key={t.id}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            padding: '0 6px',
+            height: 16,
+            borderRadius: 8,
+            backgroundColor: t.color,
+            color: '#fff',
+            fontSize: 10,
+            fontWeight: 600,
+            letterSpacing: 0.2,
+          }}
+        >
+          {t.name}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/** PeopleCell 内部用的「按候选人姓名→分组名」映射缓存（避免在 groupBy 中调用 hook）。
+ * 缓存以 teams/people 引用为粒度失效：teams 或 people 引用变化即清空（hooks 已保证只在它们真变时触发渲染）。 */
+const _groupCache = new Map<string, string>();
+function useGroupCache(
+  people: { name: string; teamIds: string[] }[],
+  teams: { id: string; name: string }[],
+  ungroupedLabel: string,
+): void {
+  const ref = useRef<{ people: unknown; teams: unknown; label: string } | null>(null);
+  if (
+    !ref.current ||
+    ref.current.people !== people ||
+    ref.current.teams !== teams ||
+    // 语言切换时 people/teams 引用不变，但「未分组」文案要跟着变 → 一并纳入失效条件
+    ref.current.label !== ungroupedLabel
+  ) {
+    _groupCache.clear();
+    ref.current = { people, teams, label: ungroupedLabel };
+  }
+}
+
+function groupNameForPerson(
+  option: string,
+  people: { name: string; teamIds: string[] }[],
+  teams: { id: string; name: string }[],
+  ungroupedLabel: string,
+): string {
+  const cached = _groupCache.get(option);
+  if (cached !== undefined) return cached;
+  const p = people.find((x) => x.name === option);
+  if (!p || p.teamIds.length === 0) {
+    _groupCache.set(option, ungroupedLabel);
+    return ungroupedLabel;
+  }
+  // 多团队按 id 字典序选第一个
+  const sortedTeamIds = [...p.teamIds].sort();
+  const t = teams.find((x) => x.id === sortedTeamIds[0]);
+  const label = t?.name ?? ungroupedLabel;
+  _groupCache.set(option, label);
+  return label;
 }

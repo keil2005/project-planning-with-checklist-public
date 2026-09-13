@@ -27,6 +27,7 @@ import { normalizePlan } from '../shared/scheduler';
 import {
   DomainError,
   ErrCode,
+  SCHEMA_VERSION,
   type DepType,
   type Duration,
   type DurationUnit,
@@ -324,7 +325,7 @@ export function importMppFile(filePath: string): Plan {
 
   const { name, tasks } = toPlan(parsed);
   const plan: Plan = {
-    schemaVersion: 1,
+    schemaVersion: SCHEMA_VERSION,
     planId: '',
     name,
     version: 0,

@@ -12,7 +12,7 @@
  */
 
 import type { ColumnKey } from './columns';
-import type { Task, TaskComputed } from '../shared/types';
+import type { Person, Task, TaskComputed } from '../shared/types';
 import { normalizePeople } from '../shared/people';
 import { formatDuration } from '../shared/datetime';
 import { formatDepsExpr } from '../shared/scheduler';
@@ -77,15 +77,35 @@ export interface FilterState {
   byColumn: Partial<Record<ColumnKey, ColumnFilter>>;
   /** 「Assign to me」：负责人或顾问人含当前登录人 */
   onlyMine: boolean;
+  /**
+   * 「Cross-functional」：选中的团队 ID 集合（OR 关系）。
+   * 空数组 = 该维度未启用（与 onlyMine / byColumn 同等待遇）。
+   * 命中规则：任务的 owner/consultant 至少有一人属于其中任一团队。
+   * 与 onlyMine / byColumn 之间是 AND 叠加。
+   */
+  crossTeamIds: string[];
+  /**
+   * 「Cross-functional」附庸：当 crossTeamIds 非空时，是否同时保留「无团队人员」对应的任务
+   * （默认 true：避免没建团队的孤立任务突然消失；用户可在 popover 里关掉）。
+   * crossTeamIds 为空时本字段无意义。
+   */
+  crossIncludeUnassigned: boolean;
 }
 
-export const EMPTY_FILTER: FilterState = { byColumn: {}, onlyMine: false };
+export const EMPTY_FILTER: FilterState = {
+  byColumn: {},
+  onlyMine: false,
+  crossTeamIds: [],
+  crossIncludeUnassigned: true,
+};
 
-/** 匹配时的上下文：排程结果（取计算后的日期/时长）+ 行号映射（渲染依赖表达式）+ 当前身份 */
+/** 匹配时的上下文：排程结果（取计算后的日期/时长）+ 行号映射（渲染依赖表达式）+ 当前身份 + 人员注册表（小写名 → Person） */
 export interface FilterContext {
   computed: Record<string, TaskComputed>;
   idToSeq: Map<string, number>;
   me: string | null;
+  /** 跨部门筛选用：小写人名 → Person 索引；无 people 表时给空 Map（视为全部「无团队」） */
+  peopleByName: Map<string, Person>;
 }
 
 /* ============================ 列能力 ============================ */
@@ -211,9 +231,10 @@ function matchDate(values: string[], f: DateFilter): boolean {
 import { isMine } from '../shared/people';
 export { isMine };
 
-/** 所有条件之间是与（AND）：每列都要满足，且 onlyMine 也要满足 */
+/** 所有条件之间是与（AND）：每列都要满足，且 onlyMine / cross-functional 也要满足 */
 export function taskMatches(task: Task, f: FilterState, ctx: FilterContext): boolean {
   if (f.onlyMine && !isMine(task, ctx.me)) return false;
+  if (f.crossTeamIds.length > 0 && !matchCrossFunctional(task, f, ctx)) return false;
   for (const key of Object.keys(f.byColumn) as ColumnKey[]) {
     const cf: ColumnFilter | undefined = f.byColumn[key];
     if (!cf) continue;
@@ -225,6 +246,35 @@ export function taskMatches(task: Task, f: FilterState, ctx: FilterContext): boo
     if (!ok) return false;
   }
   return true;
+}
+
+/**
+ * 「Cross-functional」命中：任务的 owner/consultant 至少有一人属于选中团队；
+ * 或者（若 crossIncludeUnassigned=true）任务里至少有一人无团队。
+ * 大小写不敏感（peopleByName 已 normalize 到小写 key）。
+ *
+ * 留白：
+ *  - 人员未注册到 people 表 → 视为「无团队」
+ *  - 人员注册了但 teamIds=[] → 也视为「无团队」
+ *  - 任务无任何 owner/consultant → 该任务永远不被选中（无所属）
+ */
+function matchCrossFunctional(task: Task, f: FilterState, ctx: FilterContext): boolean {
+  const ids = f.crossTeamIds;
+  const persons = normalizePeople([...(task.owner ?? []), ...(task.consultant ?? [])]);
+  if (persons.length === 0) return false;
+
+  const inTeam = persons.some((name) => {
+    const p = ctx.peopleByName.get(name.toLowerCase());
+    return !!p && p.teamIds.some((tid) => ids.includes(tid));
+  });
+  if (inTeam) return true;
+
+  if (!f.crossIncludeUnassigned) return false;
+  // 「无团队」= 未注册 或 注册了但 teamIds 为空
+  return persons.some((name) => {
+    const p = ctx.peopleByName.get(name.toLowerCase());
+    return !p || p.teamIds.length === 0;
+  });
 }
 
 /* ============================ 保留集合（含祖先链） ============================ */
@@ -268,7 +318,18 @@ export function computeKeepIds(
 /* ============================ 状态判定与摘要 ============================ */
 
 export function isFilterActive(f: FilterState): boolean {
-  return f.onlyMine || Object.keys(f.byColumn).length > 0;
+  return f.onlyMine || f.crossTeamIds.length > 0 || Object.keys(f.byColumn).length > 0;
+}
+
+/** 「Cross-functional」维度的自然语言摘要（FilterBar chip + 甘特侧 tooltip） */
+export function describeCrossFunctional(f: FilterState, teams: readonly { id: string; name: string }[]): string {
+  if (f.crossTeamIds.length === 0) return '';
+  const byId = new Map(teams.map((t) => [t.id, t.name] as const));
+  const names = f.crossTeamIds.map((id) => byId.get(id) ?? id);
+  const shown = names.slice(0, 2).join(t('filter.enumSep'));
+  const more = names.length > 2 ? t('filter.descEnumMore', { n: names.length - 2 }) : '';
+  const uns = f.crossIncludeUnassigned ? '' : t('filter.crossHideUnassigned', { defaultValue: '（不含未分配）' });
+  return shown + more + uns;
 }
 
 /** 有筛选的列名（按 COLUMNS 顺序返回，保证 chips 顺序稳定） */

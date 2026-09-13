@@ -28,6 +28,7 @@ import { AuthGate } from './components/AuthGate';
 import Dialogs from './components/Dialogs';
 import GanttChart from './components/GanttChart';
 import { RosterDialog } from './components/RosterDialog';
+import { TeamManagerDialog } from './components/TeamManagerDialog';
 import TaskTable from './components/TaskTable';
 import TodoDrawer from './components/TodoDrawer';
 import Toolbar from './components/Toolbar';
@@ -42,7 +43,8 @@ function DiagnosticsBar(): JSX.Element | null {
   const diagnostics = useStore((s) => s.diagnostics);
   const plan = useStore((s) => s.plan);
   const selectTask = useStore((s) => s.selectTask);
-  const [open, setOpen] = useState(true);
+  // v1.4.1 克制：默认折叠，避免首屏第二行被警告霸占；pill 仍可见作状态胶囊
+  const [open, setOpen] = useState(false);
   const tr = useT();
 
   const { errors, warns } = useMemo(() => {
@@ -244,6 +246,7 @@ export default function App(): JSX.Element {
       <Dialogs />
       <TodoDrawer />
       <RosterDialog />
+      <TeamManagerDialog />
       <AuthGateShell />
 
       <Snackbar

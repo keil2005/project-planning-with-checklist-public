@@ -18,6 +18,7 @@ import {
   SCHEMA_VERSION,
   isDomainError,
   NATURAL_CALENDAR,
+  TEAM_COLORS,
   type WorkCalendar,
   type DeriveSource,
   type Dependency,
@@ -29,12 +30,14 @@ import {
   type ISODate,
   type Level,
   type Plan,
+  type Person,
   type ScheduleOptions,
   type ScheduleResult,
   type Task,
   type TaskComputed,
   type TaskField,
   type TaskInput,
+  type Team,
   type TodoItem,
 } from './types';
 import { normalizePeople } from './people';
@@ -475,7 +478,86 @@ export function normalizePlan(input: Plan): Plan {
       defaultDuration,
     },
     tasks: ordered,
+    // v1.4.1+ 团队/人员注册表（v1.4.1 引入）：
+    //   - 缺失 → 兜底空数组（v1.4.0 旧 plan 自动平滑升级，不破坏向前兼容）；
+    //   - 含 id 缺/空的 → 按出现顺序补 `t_<seq>` / `p_<seq>`；
+    //   - name 必填 + 大小写不敏感去重；
+    //   - color 默认从 TEAM_COLORS 按出现顺序分配；
+    //   - teamIds 过滤掉不存在的 team.id（orphan 防御）。
+    teams: normalizeTeams(raw.teams),
+    people: normalizePeopleRegistry(raw.people, raw.tasks ?? []),
   };
+}
+
+/* ============================================================
+ * v1.4.1+ 团队/人员注册表归一化（v1.4.1 引入）
+ * ============================================================ */
+
+/**
+ * 团队归一化：补 id、去重 name、保证 color 合法 hex（否则回退 TEAM_COLORS[0]）。
+ * 不进 plan.tasks，所以放在 normalizePlan 末尾、与 tasks 并列。
+ */
+function normalizeTeams(raw: unknown): Team[] {
+  if (!Array.isArray(raw)) return [];
+  const out: Team[] = [];
+  const seenNames = new Set<string>();
+  const seenIds = new Set<string>();
+  for (let i = 0; i < raw.length; i += 1) {
+    const r = (raw[i] ?? {}) as Partial<Team>;
+    const name = typeof r.name === 'string' ? r.name.trim() : '';
+    if (name === '') continue;
+    const key = name.toLowerCase();
+    if (seenNames.has(key)) continue;
+    seenNames.add(key);
+    const id = typeof r.id === 'string' && r.id !== '' && !seenIds.has(r.id) ? r.id : `t_${i + 1}`;
+    seenIds.add(id);
+    const color = typeof r.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(r.color) ? r.color : TEAM_COLORS[out.length % TEAM_COLORS.length];
+    out.push({ id, name, color });
+  }
+  return out;
+}
+
+/**
+ * 人员注册表归一化：
+ *  - **三源汇合**：(a) 原 plan.people，(b) 所有 task.owner / consultant 中**未在 (a) 出现的姓名**（自动建无元数据条目），
+ *    (c) 这样保证任务里的「野名字」也能在团队/人员管理页可见——避免「任务有负责人但管理页找不到」。
+ *  - name 去重（大小写不敏感）+ id 补齐；
+ *  - gender 必须是 'male'/'female'，其他值归 undefined；
+ *  - teamIds 过滤掉不存在的 team.id（orphan 防御）。
+ */
+function normalizePeopleRegistry(raw: unknown, tasks: readonly Task[]): Person[] {
+  // (a) 先把显式注册的人归一化
+  const explicit: Person[] = [];
+  const seenNames = new Set<string>();
+  const seenIds = new Set<string>();
+  if (Array.isArray(raw)) {
+    for (let i = 0; i < raw.length; i += 1) {
+      const r = (raw[i] ?? {}) as Partial<Person>;
+      const name = typeof r.name === 'string' ? r.name.trim() : '';
+      if (name === '') continue;
+      const key = name.toLowerCase();
+      if (seenNames.has(key)) continue;
+      seenNames.add(key);
+      const id = typeof r.id === 'string' && r.id !== '' && !seenIds.has(r.id) ? r.id : `p_${i + 1}`;
+      seenIds.add(id);
+      const gender: 'male' | 'female' | undefined = r.gender === 'male' || r.gender === 'female' ? r.gender : undefined;
+      const teamIds = Array.isArray(r.teamIds) ? r.teamIds.filter((x): x is string => typeof x === 'string') : [];
+      explicit.push({ id, name, gender, teamIds });
+    }
+  }
+  // (b) 把任务里出现但未注册的人自动建一份（无元数据）
+  for (const t of tasks) {
+    for (const name of [...(t.owner ?? []), ...(t.consultant ?? [])]) {
+      const trimmed = name.trim();
+      if (trimmed === '') continue;
+      const key = trimmed.toLowerCase();
+      if (seenNames.has(key)) continue;
+      seenNames.add(key);
+      const id = `p_${explicit.length + 1}`;
+      explicit.push({ id, name: trimmed, gender: undefined, teamIds: [] });
+    }
+  }
+  return explicit;
 }
 
 /* ============================================================

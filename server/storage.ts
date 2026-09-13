@@ -19,6 +19,7 @@ import { applyTodoOp, makeTodoId, sanitizeTodos } from '../shared/todo';
 import {
   DomainError,
   ErrCode,
+  HISTORY_SCHEMA_VERSION,
   SCHEMA_VERSION,
   type HistoryFile,
   type Plan,
@@ -66,15 +67,15 @@ function migratePlan(raw: unknown, planId: string): Plan {
 
 function migrateHistory(raw: unknown, planId: string): HistoryFile {
   const obj = (raw ?? {}) as Partial<HistoryFile>;
-  const sv = Number(obj.schemaVersion ?? SCHEMA_VERSION);
-  if (sv !== SCHEMA_VERSION) {
+  const sv = Number(obj.schemaVersion ?? HISTORY_SCHEMA_VERSION);
+  if (sv !== HISTORY_SCHEMA_VERSION) {
     throw new DomainError(
       ErrCode.ERR_INTERNAL,
-      `历史 ${planId} 的 schemaVersion=${sv} 不受支持（当前支持 ${SCHEMA_VERSION}）`,
+      `历史 ${planId} 的 schemaVersion=${sv} 不受支持（当前支持 ${HISTORY_SCHEMA_VERSION}）`,
     );
   }
   const versions = Array.isArray(obj.versions) ? obj.versions : [];
-  return { schemaVersion: SCHEMA_VERSION, planId: obj.planId ?? planId, versions };
+  return { schemaVersion: HISTORY_SCHEMA_VERSION, planId: obj.planId ?? planId, versions };
 }
 
 /** 计划 ID 生成规则（K6）：p-yyyyMMdd-HHmmss-xxxx */
@@ -168,7 +169,7 @@ export class HistoryRepository {
   private readHistory(planId: string): HistoryFile {
     const file = historyFile(planId);
     if (!fs.existsSync(file)) {
-      return { schemaVersion: SCHEMA_VERSION, planId, versions: [] };
+      return { schemaVersion: HISTORY_SCHEMA_VERSION, planId, versions: [] };
     }
     return migrateHistory(readJson<unknown>(file), planId);
   }
@@ -217,7 +218,7 @@ export class HistoryRepository {
     };
     const entry: VersionEntry = { version, timestamp, editor, notes, planSnapshot: snapshot };
     history.versions.push(entry);
-    history.schemaVersion = SCHEMA_VERSION;
+    history.schemaVersion = HISTORY_SCHEMA_VERSION;
     history.planId = planId;
 
     const payload = `${JSON.stringify(history, null, 2)}\n`;

@@ -19,7 +19,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { config } from './config';
 import { planFile, historyFile, todosFile } from './config';
-import { SCHEMA_VERSION, type Plan } from '../shared/types';
+import {
+  HISTORY_SCHEMA_VERSION,
+  SCHEMA_VERSION,
+  type Plan,
+} from '../shared/types';
 import { normalizePlan } from '../shared/scheduler';
 import { applyTodoOp, makeTodoId } from '../shared/todo';
 import { nowTimestamp } from '../shared/datetime';
@@ -112,7 +116,7 @@ export function seedDemoPlanIfEmpty(
 
   atomicWriteJson(planFile(raceCar.planId), raceCar);
   atomicWriteJson(historyFile(raceCar.planId), {
-    schemaVersion: SCHEMA_VERSION,
+    schemaVersion: HISTORY_SCHEMA_VERSION,
     planId: raceCar.planId,
     versions: [
       {

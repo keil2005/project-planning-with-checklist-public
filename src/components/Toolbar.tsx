@@ -28,6 +28,7 @@ import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import LogoutIcon from '@mui/icons-material/Logout';
 import PersonIcon from '@mui/icons-material/Person';
 import GroupsIcon from '@mui/icons-material/Groups';
+import GroupWorkIcon from '@mui/icons-material/GroupWork';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import SaveIcon from '@mui/icons-material/Save';
 import TodayIcon from '@mui/icons-material/Today';
@@ -115,6 +116,15 @@ export default function Toolbar(): JSX.Element {
         <Tooltip title={tr('toolbar.rosterTooltip')}>
           <Button startIcon={<GroupsIcon />} variant="text" onClick={() => openDialog('roster')}>
             {tr('toolbar.team')}
+          </Button>
+        </Tooltip>
+      )}
+
+      {/* v1.4.1+ 计划内「团队与人员」管理（v1.4.1 引入，与花名册入口区分） */}
+      {authed && plan && (
+        <Tooltip title={tr('team.title')}>
+          <Button startIcon={<GroupWorkIcon />} variant="text" onClick={() => openDialog('teamManager')}>
+            {tr('team.title')}
           </Button>
         </Tooltip>
       )}

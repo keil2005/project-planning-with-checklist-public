@@ -48,7 +48,7 @@ function setup(user: string | null): void {
     }) as Plan,
     sched: null,
     calendar: NATURAL_CALENDAR,
-    filter: { byColumn: {}, onlyMine: false },
+    filter: { byColumn: {}, onlyMine: false, crossTeamIds: [], crossIncludeUnassigned: true },
     selectedTaskId: null,
     dialogs: {
       user: false,
@@ -57,6 +57,8 @@ function setup(user: string | null): void {
       history: false,
       calendar: false,
       exportTodos: false,
+      roster: false,
+      teamManager: false,
     },
   });
 }

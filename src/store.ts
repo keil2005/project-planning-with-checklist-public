@@ -39,10 +39,12 @@ import {
   type PlanMeta,
   type PublicUserInfo,
   type PublicWorkspaceInfo,
+  type Person,
   type ScheduleResult,
   type Task,
   type TaskComputed,
   type TaskField,
+  type Team,
   type TodoItem,
   type TodoOp,
   type TodosFile,
@@ -77,7 +79,7 @@ export interface ToastMsg {
   severity: 'success' | 'info' | 'warning' | 'error';
 }
 
-export type DialogName = 'user' | 'planPicker' | 'save' | 'history' | 'calendar' | 'exportTodos' | 'roster';
+export type DialogName = 'user' | 'planPicker' | 'save' | 'history' | 'calendar' | 'exportTodos' | 'roster' | 'teamManager';
 
 /** 全局工作日历保留资源 id（与 per-plan 锁相互独立，见 server/routes.ts） */
 export const GLOBAL_CALENDAR = 'GLOBAL_CALENDAR';
@@ -156,6 +158,14 @@ export interface StoreState {
    */
   criticalTaskIds: Set<string>;
 
+  /**
+   * 当前甘特/表格 hover 的行 ID（v1.4.1+）。
+   * 由 onMouseMove 解析 Y 坐标得到 row 索引 → setHoveredRowId(task.id)。
+   * 纯 UI 状态，不入 plan / 不入 localStorage / 不参与协同；
+   * 两边面板共享同一来源，hover 表头、画布、柱条 blank 处都会点亮对应行。
+   * —— 与原 `pg-row:hover` CSS-only 方案相比，store-driven 保证 SVG row-highlight 与左表行底色一致。
+   */
+  hoveredRowId: string | null;
   /* ---------------- 身份协作（v1.2.0） ---------------- */
   /** 启动时已探测完成（无论登录与否） */
   authReady: boolean;
@@ -236,10 +246,29 @@ export interface StoreState {
    */
   toggleCriticalPath: () => void;
   selectTask: (taskId: string | null) => void;
+  /** 设置 hover 行（两侧面板单源真相）；同值连续调用 store 内已 no-op 短路 */
+  setHoveredRowId: (taskId: string | null) => void;
   jumpToday: () => void;
+  /* ---------------- v1.4.1+ 团队/人员注册表（v1.4.1 引入） ----------------
+     操作原则：
+       - 不在这里做 normalizePlan —— store.setPlan 时已经 normalize 过一遍。
+       - 任何修改都走「新增/全量替换」语义，保证 plan.teams / plan.people 内部不变量
+         （id 唯一、name 去重、teamIds 合法）由 normalizePlan 接管；
+       - 设置为「dirty」让前端能自动保存。
+       - 入口仅供 TeamManagerDialog 使用；表格里 PeopleCell 只读消费，不直接调。 */
+  addTeam: (team: Omit<Team, 'id'>) => string;
+  updateTeam: (id: string, patch: Partial<Omit<Team, 'id'>>) => void;
+  removeTeam: (id: string) => void;
+  addPerson: (person: Omit<Person, 'id'>) => string;
+  updatePerson: (id: string, patch: Partial<Omit<Person, 'id'>>) => void;
+  removePerson: (id: string) => void;
   /* 筛选（视图态，见 FilterState 注释） */
   setColumnFilter: (key: ColumnKey, f: ColumnFilter | null) => void;
   setOnlyMine: (v: boolean) => void;
+  /** 「Cross-functional」选中团队集合；勾空 = 关闭（与 onlyMine / byColumn AND 叠加） */
+  setCrossFunctional: (teamIds: string[]) => void;
+  /** 「Cross-functional」是否同时保留无团队人员对应的任务 */
+  setCrossIncludeUnassigned: (v: boolean) => void;
   clearAllFilters: () => void;
   /* todo 交付清单（独立资源：走 api.todoOp 异步即时提交；assignee 一致性由 normalizePlan 兜底） */
   addTodo: (taskId: string, text: string) => Promise<void>;
@@ -496,8 +525,9 @@ export const useStore = create<StoreState>((set, get) => {
 
     zoom: 'day',
     selectedTaskId: null,
+    hoveredRowId: null,
     todayTick: 0,
-    dialogs: { user: false, planPicker: false, save: false, history: false, calendar: false, exportTodos: false, roster: false },
+    dialogs: { user: false, planPicker: false, save: false, history: false, calendar: false, exportTodos: false, roster: false, teamManager: false },
     filter: EMPTY_FILTER,
     todoDrawerTaskId: null,
     todosRevision: 0,
@@ -1286,6 +1316,71 @@ export const useStore = create<StoreState>((set, get) => {
 
     selectTask: (taskId: string | null) => set({ selectedTaskId: taskId }),
 
+    // 短路由：连续 set 同一 id 直接短路，避免 onMouseMove 60Hz 写 store 引发无关 subscribe 重渲染
+    setHoveredRowId: (taskId) => {
+      if (get().hoveredRowId === taskId) return;
+      set({ hoveredRowId: taskId });
+    },
+
+    /* ---------------- v1.4.1+ 团队/人员注册表 actions ----------------
+       所有动作最后都 dirty=true，使前端能自动保存。新的 plan 走 normalizePlan
+       时会重新分配缺失的 id、过滤 orphan teamIds —— 这里不需要处理这些边界。 */
+    addTeam: (team) => {
+      const plan = get().plan;
+      if (!plan) return '';
+      const id = `t_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
+      const next: Plan = { ...plan, teams: [...(plan.teams ?? []), { ...team, id }] };
+      set({ plan: next, dirty: true });
+      return id;
+    },
+    updateTeam: (id, patch) => {
+      const plan = get().plan;
+      if (!plan) return;
+      const next: Plan = {
+        ...plan,
+        teams: (plan.teams ?? []).map((t) => (t.id === id ? { ...t, ...patch } : t)),
+      };
+      set({ plan: next, dirty: true });
+    },
+    removeTeam: (id) => {
+      const plan = get().plan;
+      if (!plan) return;
+      // 级联：把人 teamIds 中该 id 过滤掉（orphan 防御）
+      const next: Plan = {
+        ...plan,
+        teams: (plan.teams ?? []).filter((t) => t.id !== id),
+        people: (plan.people ?? []).map((p) => ({ ...p, teamIds: p.teamIds.filter((x) => x !== id) })),
+      };
+      set({ plan: next, dirty: true });
+    },
+    addPerson: (person) => {
+      const plan = get().plan;
+      if (!plan) return '';
+      const id = `p_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
+      const next: Plan = { ...plan, people: [...(plan.people ?? []), { ...person, id }] };
+      set({ plan: next, dirty: true });
+      return id;
+    },
+    updatePerson: (id, patch) => {
+      const plan = get().plan;
+      if (!plan) return;
+      const next: Plan = {
+        ...plan,
+        people: (plan.people ?? []).map((p) => (p.id === id ? { ...p, ...patch } : p)),
+      };
+      set({ plan: next, dirty: true });
+    },
+    removePerson: (id) => {
+      const plan = get().plan;
+      if (!plan) return;
+      // 仅从注册表删除，不动 task.owner（plan 仍可识别为「野名字」；后续 normalizePlan 会自动重建）
+      const next: Plan = {
+        ...plan,
+        people: (plan.people ?? []).filter((p) => p.id !== id),
+      };
+      set({ plan: next, dirty: true });
+    },
+
     jumpToday: () => set((s) => ({ todayTick: s.todayTick + 1 })),
 
     setColumnFilter: (key, f) =>
@@ -1302,7 +1397,42 @@ export const useStore = create<StoreState>((set, get) => {
       set((s) => ({ filter: { ...s.filter, onlyMine: v } }));
     },
 
-    clearAllFilters: () => set({ filter: EMPTY_FILTER }),
+    /**
+     * 「Cross-functional」选中团队集合（=[] = 关闭）。**与 onlyMine / byColumn AND 叠加**。
+     * 入参去重 + 顺序保持（用户拖选顺序），并自动过滤掉 plan.teams 里不存在的野 ID。
+     */
+    setCrossFunctional: (teamIds) => {
+      set((s) => {
+        if (!s.plan) return {};
+        const validIds = new Set((s.plan.teams ?? []).map((t) => t.id));
+        const seen = new Set<string>();
+        const filtered: string[] = [];
+        for (const id of teamIds) {
+          if (!validIds.has(id) || seen.has(id)) continue;
+          seen.add(id);
+          filtered.push(id);
+        }
+        const cur = s.filter.crossTeamIds;
+        if (
+          cur.length === filtered.length &&
+          cur.every((v, i) => v === filtered[i])
+        ) {
+          return {};
+        }
+        return { filter: { ...s.filter, crossTeamIds: filtered } };
+      });
+    },
+
+    /** 跨部门筛选时是否同时保留「无团队人员」对应的任务（默认 true）。 */
+    setCrossIncludeUnassigned: (v) => {
+      if (get().filter.crossIncludeUnassigned === v) return;
+      set((s) => ({ filter: { ...s.filter, crossIncludeUnassigned: v } }));
+    },
+
+    clearAllFilters: () =>
+      set({
+        filter: { byColumn: {}, onlyMine: false, crossTeamIds: [], crossIncludeUnassigned: true },
+      }),
 
     /* ---------------- todo 交付清单 ---------------- */
 
@@ -1442,11 +1572,21 @@ export function useVisibleTasks(): Task[] {
   const sched = useStore((s) => s.sched);
   const me = useStore((s) => s.session.user);
   const idToSeq = useMemo(() => (plan ? buildIdSeqMaps(plan.tasks).idToSeq : EMPTY_ID_SEQ), [plan]);
+  const peopleByName = useMemo(() => {
+    const m = new Map<string, Person>();
+    for (const p of plan?.people ?? []) m.set(p.name.trim().toLowerCase(), p);
+    return m;
+  }, [plan]);
   return useMemo(() => {
     if (!plan) return EMPTY_TASKS;
-    const keep = computeKeepIds(plan.tasks, filter, { computed: sched?.computed ?? EMPTY_COMPUTED, idToSeq, me });
+    const keep = computeKeepIds(plan.tasks, filter, {
+      computed: sched?.computed ?? EMPTY_COMPUTED,
+      idToSeq,
+      me,
+      peopleByName,
+    });
     return computeVisibleTasks(plan.tasks, keep);
-  }, [plan, filter, sched, me, idToSeq]);
+  }, [plan, filter, sched, me, idToSeq, peopleByName]);
 }
 
 /**
@@ -1459,13 +1599,23 @@ export function useRowCounts(): { shown: number; total: number } {
   const sched = useStore((s) => s.sched);
   const me = useStore((s) => s.session.user);
   const idToSeq = useMemo(() => (plan ? buildIdSeqMaps(plan.tasks).idToSeq : EMPTY_ID_SEQ), [plan]);
+  const peopleByName = useMemo(() => {
+    const m = new Map<string, Person>();
+    for (const p of plan?.people ?? []) m.set(p.name.trim().toLowerCase(), p);
+    return m;
+  }, [plan]);
   return useMemo(() => {
     if (!plan) return { shown: 0, total: 0 };
     const total = computeVisibleTasks(plan.tasks).length;
-    const keep = computeKeepIds(plan.tasks, filter, { computed: sched?.computed ?? EMPTY_COMPUTED, idToSeq, me });
+    const keep = computeKeepIds(plan.tasks, filter, {
+      computed: sched?.computed ?? EMPTY_COMPUTED,
+      idToSeq,
+      me,
+      peopleByName,
+    });
     if (!keep) return { shown: total, total };
     return { shown: computeVisibleTasks(plan.tasks, keep).length, total };
-  }, [plan, filter, sched, me, idToSeq]);
+  }, [plan, filter, sched, me, idToSeq, peopleByName]);
 }
 
 /** 筛选求值上下文（菜单里的候选值列表、FilterBar 的判断都会用到） */
@@ -1474,9 +1624,14 @@ export function useFilterContext(): FilterContext {
   const sched = useStore((s) => s.sched);
   const me = useStore((s) => s.session.user);
   const idToSeq = useMemo(() => (plan ? buildIdSeqMaps(plan.tasks).idToSeq : EMPTY_ID_SEQ), [plan]);
+  const peopleByName = useMemo(() => {
+    const m = new Map<string, Person>();
+    for (const p of plan?.people ?? []) m.set(p.name.trim().toLowerCase(), p);
+    return m;
+  }, [plan]);
   return useMemo(
-    () => ({ computed: sched?.computed ?? EMPTY_COMPUTED, idToSeq, me }),
-    [sched, idToSeq, me],
+    () => ({ computed: sched?.computed ?? EMPTY_COMPUTED, idToSeq, me, peopleByName }),
+    [sched, idToSeq, me, peopleByName],
   );
 }
 
@@ -1505,4 +1660,53 @@ export function useOwnerCandidates(): string[] {
     }
     return [...base, ...extra];
   });
+}
+
+/* ========================= v1.4.1+ 团队/人员查询 hook ========================= */
+
+/**
+ * 当前 plan 的团队列表（按 id 出现顺序返回；store 不做排序，避免插入即重排扰乱心智模型）。
+ * v1.4.1 引入。
+ */
+export function useTeams(): Team[] {
+  return useStore((s) => (s.plan?.teams ?? []) as Team[]);
+}
+
+/**
+ * 当前 plan 的人员注册表（顺序 = normalizePlan 重建顺序）。
+ * v1.4.1 引入。
+ */
+export function usePeople(): Person[] {
+  return useStore((s) => (s.plan?.people ?? []) as Person[]);
+}
+
+/**
+ * 按 name 大小写不敏感查人员（用于 PeopleCell 显示性别 tag / 团队 chip）。
+ * 未注册 = 返回 null，调用方决定如何降级（不显示 tag）。
+ */
+export function usePersonByName(name: string | undefined | null): Person | null {
+  const people = usePeople();
+  if (!name) return null;
+  const k = name.trim().toLowerCase();
+  if (k === '') return null;
+  return people.find((p) => p.name.toLowerCase() === k) ?? null;
+}
+
+/**
+ * 按人员 id 集合查团队（去重，按 teamIds 出现顺序）。
+ * 用于 PeopleCell 把「人」翻译成「这个人所在的团队」chip。
+ */
+export function useTeamsForPerson(person: Person | null): Team[] {
+  const teams = useTeams();
+  if (!person) return [];
+  const byId = new Map(teams.map((t) => [t.id, t] as const));
+  const seen = new Set<string>();
+  const out: Team[] = [];
+  for (const tid of person.teamIds) {
+    const t = byId.get(tid);
+    if (!t || seen.has(t.id)) continue;
+    seen.add(t.id);
+    out.push(t);
+  }
+  return out;
 }

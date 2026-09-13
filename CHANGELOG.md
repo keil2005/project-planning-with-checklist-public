@@ -5,6 +5,57 @@
 
 > **下一次发布**：[Unreleased] — Docker 一键部署 / 多项导出（详见 [IMPL_ROADMAP](./docs/IMPL_ROADMAP.md)）
 
+## [1.4.1] — 2026-09-13
+
+> 主线：**团队与人员管理**（Teams & People）+ **跨部门筛选**（Cross-functional filter）。
+> 2 个新功能 + 1 个持久化修复 + 1 组守护测试。任务表与甘特图的排程 / 渲染逻辑零改动。
+
+![团队管理 + 跨部门筛选](./docs/screenshots/screenshot-teams-cross-functional.png)
+
+> 上图：工具栏新增 **Teams & People** 入口（团队与人员管理），FilterBar 新增 **Cross-functional** 跨部门筛选；任务表「负责人」列同时显示微信风性别色点（♂ 蓝 / ♀ 粉）与团队 chip。
+
+### Added（功能）
+
+1. **团队与人员管理（Teams & People）**
+   - 工具栏新增 **Teams & People** 入口（独立图标，与既有「花名册 Roster」刻意区分），打开双 Tab 对话框：
+     - **Teams** Tab：新建 / 重命名 / 删除团队，内置 6 色色板 + 自定义 hex
+     - **People** Tab：为每个人设置**性别**与**所属团队（支持多选）**
+   - 任务表「负责人」列读模式显示 **微信风性别色点**（♂ 蓝 / ♀ 粉，圆形 16px）+ 团队 chip 摘要；编辑模式下拉**按团队分组**（无团队者沉底，避免分组标题碎裂）
+   - 人员注册表自动从任务负责人 / 顾问人补齐（保证任何出现在计划里的人都能在管理页找到）；删除团队时自动从人员归属中级联移除；未注册团队的孤立归属在归一化阶段自动过滤
+   - 涉及：`src/components/TeamManagerDialog.tsx`（新增）、`shared/types.ts`、`shared/scheduler.ts`、`src/store.ts`、`src/components/TaskTable.tsx`、`src/components/Toolbar.tsx`、`src/i18n.tsx`
+
+2. **跨部门筛选（Cross-functional filter）**
+   - FilterBar「Assign to me」右侧新增 **Cross-functional** 按钮：点击展开面板 —— 团队多选 + 搜索 + 全选 + **「保留无团队人员对应的任务」开关**（默认开）
+   - 命中语义：任务的负责人或顾问人**任一人属于选中团队**即命中；与「Assign to me」、列筛选之间为 **AND 叠加**
+   - 默认保留无团队人员承接的任务（对齐既有枚举列筛选的 blanks 开关习惯）；关闭开关即「只看选中团队承接的任务」
+   - 计划中尚无团队时按钮自动禁用，并提示前往「Teams & People」创建
+   - 甘特侧只读筛选条同步显示跨部门摘要
+   - 涉及：`src/filter.ts`、`src/store.ts`、`src/components/FilterBar.tsx`、`src/i18n.tsx`
+
+### Fixed（修复）
+
+3. **历史快照写入的 schemaVersion 错位（严重）**
+   - 现象：`PUT /api/plans/:id` 首次保存后，`/api/plans/:id/history*` 与 `/api/plans/:id/restore` **全部返回 5000**，历史回滚功能不可用
+   - 根因：1.4.1 起「计划（Plan）」与「历史文件（History）」使用**各自独立**的 schema 版本常量，而演示数据种子在写历史文件时误用了计划的 `SCHEMA_VERSION`，与读取端按 `HISTORY_SCHEMA_VERSION` 的严格校验不一致
+   - 修复：`server/demoSeed.ts` 改用 `HISTORY_SCHEMA_VERSION`；`server/storage.ts` 的历史迁移与默认值同步对齐；`server/routes.ts`、`server/mppImport.ts` 统一引用 `SCHEMA_VERSION`
+   - 涉及：`server/demoSeed.ts`、`server/storage.ts`、`server/routes.ts`、`server/mppImport.ts`、`shared/types.ts`
+
+4. **新增守护测试** — `server/__tests__/demo-seed.test.ts`（2 用例）
+   - **sentinel**：磁盘上「计划」与「历史」文件的 schemaVersion 各就各位（防止再次串用常量）
+   - **集成闭环**：历史仓库读取不抛错
+
+### Changed（变更）
+
+5. **数据 schema 版本升至 2** — 计划新增可选字段 `teams[]` / `people[]`；旧计划在读取时自动向上兼容迁移，无感升级，不影响既有数据
+
+### Verification
+
+- `npm test` → **404 / 404 通过**（v1.4.0 为 392；+10 跨部门用例 + 2 守护用例）
+- `tsc --noEmit` → 本次新增 **0**（v1.4.0 基线 35 项 → 现 34 项，顺带修掉 1 项测试夹具缺键；用 `git worktree` 检出 v1.4.0 实测对照）
+- `vite build` → JS 717KB / CSS 32KB
+- API 持久化 round-trip（隔离数据目录）→ 保存 200、版本 +1、团队与人员元数据完整落盘、历史快照同步写入
+- Playwright e2e（新建团队 → 分配人员 → 启用跨部门 → 保存 → 重载）→ 0 page errors
+
 ## [1.4.0] — 2026-09-11
 
 > 主线：**UI 优雅版**（indigo 品牌色 + 设计令牌体系 + 双主题精修）+ **首次启动默认登录凭据自动可用**。
